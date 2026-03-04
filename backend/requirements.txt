@@ -8,6 +8,10 @@ passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
 python-dotenv==1.0.1
 openpyxl>=3.1.0
+scikit-learn>=1.4
+numpy>=1.26
+pandas>=2.2
+pdfplumber>=0.11
 
 # ── Testing ────────────────────────────────────────────────────────────────────
 pytest==8.3.4

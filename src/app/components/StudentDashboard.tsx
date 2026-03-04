@@ -286,14 +286,23 @@ export function StudentDashboard() {
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h3 className="text-foreground mb-1">Skill Radar</h3>
                 <p className="text-sm text-muted-foreground mb-4">Subject-wise proficiency map</p>
-                <ResponsiveContainer width="100%" height={280}>
-                  <RadarChart data={d.radar}>
-                    <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10 }} stroke="#94a3b8" />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#cbd5e1" />
-                    <Radar name="Score" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.2} strokeWidth={2} />
-                  </RadarChart>
-                </ResponsiveContainer>
+                {d.radar.length === 0 ? (
+                  <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
+                    <div className="text-center">
+                      <Target className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <p>No radar data yet.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <RadarChart data={d.radar}>
+                      <PolarGrid stroke="#e2e8f0" />
+                      <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#cbd5e1" />
+                      <Radar name="Score" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.2} strokeWidth={2} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
               <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between mb-4">

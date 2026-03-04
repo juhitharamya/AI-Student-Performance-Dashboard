@@ -11,7 +11,7 @@ class StudentProfile(BaseModel):
     section: str
     department: str
     avatar_initials: str
-    overall_score: str
+    overall_score: str | float
     class_rank: int
     attendance: str
 
@@ -43,7 +43,7 @@ class ComparisonPoint(BaseModel):
 class RadarPoint(BaseModel):
     subject: str
     A: int
-    fullMark: int
+    fullMark: int = 100
 
 
 # ── Recent activity ───────────────────────────────────────────────────────────
