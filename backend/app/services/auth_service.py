@@ -5,14 +5,15 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
+import app.core.database as _db
 from app.core.security import verify_password, create_access_token, hash_password
 from app.models.user import User
 from app.schemas.auth import RegisterRequest
 
 
 def _get_db() -> Session:
-    return SessionLocal()
+    """Always use the current module-level SessionLocal so tests can patch it."""
+    return _db.SessionLocal()
 
 
 def authenticate_user(email: str, password: str, role: str) -> dict:
@@ -116,10 +117,11 @@ def register_user(body: RegisterRequest) -> dict:
 
         token = create_access_token({"sub": new_user.id, "role": new_user.role})
         return {
-            "access_token": token,
-            "token_type": "bearer",
-            "role": new_user.role,
-            "name": new_user.name,
+            "access_token":   token,
+            "token_type":     "bearer",
+            "role":           new_user.role,
+            "name":           new_user.name,
+            "email":          new_user.email,
             "avatar_initials": new_user.avatar_initials,
         }
     finally:

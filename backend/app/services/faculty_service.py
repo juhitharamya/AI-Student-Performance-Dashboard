@@ -19,7 +19,8 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 
-from app.core.database import SessionLocal, UPLOAD_DIR
+import app.core.database as _db
+from app.core.database import UPLOAD_DIR
 from app.models.uploaded_file import UploadedFile
 from app.core import data_store as db  # only for filter constants (DEPARTMENTS etc.)
 
@@ -273,18 +274,18 @@ def _parse_raw_rows(file_path: str, filename: str) -> tuple[list[dict], list[str
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def _all_files() -> list[dict]:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         files = session.query(UploadedFile).order_by(UploadedFile.date.desc()).all()
         return [f.to_dict() for f in files]
 
 
 def _file_record(file_id: str) -> UploadedFile | None:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         return session.get(UploadedFile, file_id)
 
 
 def _parse_marks(file_id: str) -> list[dict]:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         rec = session.get(UploadedFile, file_id)
         if not rec:
             return []

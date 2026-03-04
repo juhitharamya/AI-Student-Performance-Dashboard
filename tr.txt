@@ -1,0 +1,378 @@
+.\.venv313\Scripts\python.exe : 
+C:\Users\ssred\projects\AI Student 
+Performance Dashboard\backend\.venv313\
+Lib\site-packages\pytest_asyncio\plugin
+.py:207: PytestDeprecationWarning: The 
+configuration option 
+"asyncio_default_fixture_loop_scope" 
+is unset.
+At line:1 char:13
++ cd backend; 
+.\.venv313\Scripts\python.exe -m 
+pytest tests/test_regist ...
++             ~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpeci 
+   fied: (C:\Users\ssred\...cope" is   
+  unset.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCo 
+   mmandError
+ 
+The event loop scope for asynchronous 
+fixtures will default to the fixture 
+caching scope. Future versions of 
+pytest-asyncio will default the loop 
+scope for asynchronous fixtures to 
+function scope. Set the default 
+fixture loop scope explicitly in order 
+to avoid unexpected behavior in the 
+future. Valid fixture loop scopes are: 
+"function", "class", "module", 
+"package", "session"
+
+  warnings.warn(PytestDeprecationWarnin
+g(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.3.4, pluggy-1.6.0 -- C:\Users\ssred\projects\AI Student Performance Dashboard\backend\.venv313\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\ssred\projects\AI Student Performance Dashboard\backend
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-0.25.3
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None
+collecting ... collected 1 item
+
+tests/test_register.py::TestRegister::test_register_student_success ERROR
+
+=================================== ERRORS ====================================
+________ ERROR at setup of TestRegister.test_register_student_success _________
+
+_use_test_db = None
+
+    @pytest.fixture(scope="session")
+    def client(_use_test_db) -> TestClient:
+        """A TestClient that wraps the FastAPI app (no real server needed)."""
+>       from app.main import app
+
+tests\conftest.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    from contextlib import asynccontextmanager
+    
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    
+    from app.core.config import settings
+    from app.core.database import init_db
+>   from app.routers import auth, faculty, student
+
+app\main.py:8: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    from fastapi import APIRouter, Depends, File, Form, UploadFile
+    
+    from app.core.dependencies import require_faculty
+    from app.schemas.faculty import (
+        AnalyticsData,
+        AverageReport,
+        AverageReportRequest,
+        FacultyStats,
+        FileAnalysis,
+        FilterOptions,
+        UploadedFile,
+        UploadedFileList,
+    )
+>   from app.services import faculty_service
+
+app\routers\faculty.py:14: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    """
+    Faculty service ? backed by SQLite (file metadata) + local filesystem (file bytes).
+    
+    File flow:
+      Upload  \u2192 bytes written to  backend/uploads/<uuid>_<filename>
+                metadata row inserted into uploaded_files table
+      Parse   \u2192 bytes read from   file_path on disk
+      Delete  \u2192 file_path unlinked from disk + row deleted from DB
+    """
+    
+    import csv
+    import io
+    import logging
+    import os
+    import statistics
+    import uuid
+    from datetime import datetime
+    from pathlib import Path
+    
+    from fastapi import HTTPException, UploadFile, status
+    
+    import app.core.database as _db
+    from app.core.database import UPLOAD_DIR
+    from app.core import data_store as db  # only for filter constants (DEPARTMENTS etc.)
+    
+    logger = logging.getLogger(__name__)
+    
+    # Grade-bucket colours (A \u2192 F)
+    _GRADE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#ddd6fe"]
+    
+    # Column name alias sets
+    _NAME_ALIASES   = {"name", "student", "student_name", "student name", "sname", "studentname"}
+    _ROLL_ALIASES_HIGH = {
+        "roll", "roll_no", "rollno", "roll no", "roll number", "rollnumber",
+        "reg", "reg_no", "regno", "student_id",
+    }
+    _ROLL_ALIASES_LOW = {"sno", "s.no", "serial", "id", "no", "sl.no", "sl no", "sr.no", "sr no"}
+    _ROLL_ALIASES = _ROLL_ALIASES_HIGH | _ROLL_ALIASES_LOW
+    _MARKS_ALIASES = {
+        "marks", "score", "scores", "total", "total_marks", "totalmarks",
+        "final", "final_marks", "finalmarks", "grade_points", "obtained",
+        "marks_obtained", "result", "exam", "exam_marks", "marks/100",
+        "grand total", "grandtotal", "overall", "aggregate", "sum",
+    }
+    
+    
+    # \u2500\u2500 Column helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    
+    def _clean_header(h: str) -> str:
+        s = str(h).strip().lower()
+        if "(" in s:
+            s = s[:s.index("(")].strip()
+        s = s.rstrip(" 0123456789")
+        return s.strip()
+    
+    def _is_name_col(h: str)      -> bool: return _clean_header(h) in _NAME_ALIASES or str(h).strip().lower() in _NAME_ALIASES
+    def _is_roll_col(h: str)      -> bool: return str(h).strip().lower() in _ROLL_ALIASES
+    def _is_roll_col_high(h: str) -> bool: return str(h).strip().lower() in _ROLL_ALIASES_HIGH
+    def _is_marks_col(h: str)     -> bool:
+        clean = _clean_header(h)
+        return clean in _MARKS_ALIASES or str(h).strip().lower() in _MARKS_ALIASES
+    
+    def _is_numeric_col(col: str, rows: list[dict]) -> bool:
+        vals = [rows[i].get(col) for i in range(min(20, len(rows)))]
+        numeric = total = 0
+        for v in vals:
+            if v is None or str(v).strip() == "": continue
+            total += 1
+            try:
+                float(str(v).replace(",", ""))
+                numeric += 1
+            except ValueError:
+                pass
+        return total > 0 and (numeric / total) >= 0.7
+    
+    def _col_mean(col: str, rows: list[dict]) -> float:
+        vals = []
+        for r in rows[:50]:
+            v = r.get(col)
+            if v is None: continue
+            try:
+                vals.append(float(str(v).replace(",", "")))
+            except (TypeError, ValueError):
+                pass
+        return sum(vals) / len(vals) if vals else 0.0
+    
+    
+    # \u2500\u2500 File parsing \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    
+    def _read_file_bytes(file_path: str) -> bytes:
+        try:
+            return Path(file_path).read_bytes()
+        except Exception as e:
+            logger.warning("Cannot read file %s: %s", file_path, e)
+            return b""
+    
+    
+    def _parse_marks_from_path(file_path: str, filename: str) -> list[dict]:
+        raw = _read_file_bytes(file_path)
+        if not raw:
+            return []
+        ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+        if ext in ("xlsx", "xls"):
+            return _parse_xlsx(raw)
+        if ext == "pdf":
+            return _parse_pdf(raw)
+        return _parse_csv(raw)
+    
+    
+    def _parse_csv(raw: bytes) -> list[dict]:
+        try:
+            text = raw.decode("utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            if not rows:
+                reader2 = csv.DictReader(io.StringIO(text), delimiter=";")
+                rows = list(reader2)
+        except Exception as e:
+            logger.warning("CSV parse error: %s", e)
+            return []
+        return _extract_marks(rows)
+    
+    
+    def _parse_xlsx(raw: bytes) -> list[dict]:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+            ws = wb.active
+            rows_raw = list(ws.iter_rows(values_only=True))
+        except Exception as e:
+            logger.warning("XLSX parse error: %s", e)
+            return []
+        if not rows_raw:
+            return []
+        headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows_raw[0])]
+        rows = []
+        for row in rows_raw[1:]:
+            if any(c is not None and str(c).strip() != "" for c in row):
+                rows.append(dict(zip(headers, row)))
+        return _extract_marks(rows)
+    
+    
+    def _parse_pdf(raw: bytes) -> list[dict]:
+        try:
+            import pdfplumber
+            rows: list[dict] = []
+            headers: list[str] = []
+            with pdfplumber.open(io.BytesIO(raw)) as pdf:
+                for page in pdf.pages:
+                    table = page.extract_table()
+                    if not table:
+                        continue
+                    if not headers:
+                        headers = [str(h).strip() if h else f"col{i}" for i, h in enumerate(table[0])]
+                        for data_row in table[1:]:
+                            if any(c and str(c).strip() for c in data_row):
+                                rows.append(dict(zip(headers, data_row)))
+                    else:
+                        for data_row in table[1:]:
+                            if any(c and str(c).strip() for c in data_row):
+                                rows.append(dict(zip(headers, data_row)))
+        except ImportError:
+            logger.warning("pdfplumber not installed")
+            return []
+        except Exception as e:
+            logger.warning("PDF parse error: %s", e)
+            return []
+        return _extract_marks(rows)
+    
+    
+    def _extract_marks(rows: list[dict]) -> list[dict]:
+        if not rows:
+            return []
+        headers = list(rows[0].keys())
+    
+        name_col = next((c for c in headers if _is_name_col(c)), None)
+        if name_col is None:
+            name_col = next(
+                (c for c in headers if not _is_roll_col(c) and not _is_numeric_col(c, rows)),
+                headers[0],
+            )
+    
+        roll_col = next((c for c in headers if _is_roll_col_high(c)), None)
+        if roll_col is None:
+            roll_col = next((c for c in headers if _is_roll_col(c)), None)
+    
+        excluded: set[str] = {c for c in (name_col, roll_col) if c is not None}
+    
+        marks_col = next((c for c in headers if _is_marks_col(c) and c not in excluded), None)
+        if marks_col is None:
+            numeric_candidates = [c for c in headers if c not in excluded and _is_numeric_col(c, rows)]
+            if numeric_candidates:
+                marks_col = max(numeric_candidates, key=lambda c: _col_mean(c, rows))
+    
+        if not marks_col:
+            logger.warning("No marks column found. headers=%s", headers)
+            return []
+    
+        result = []
+        for r in rows[:500]:
+            try:
+                raw_name = str(r.get(name_col, "")).strip()
+                if not raw_name or raw_name.lower() in ("none", "nan", ""):
+                    continue
+    
+                raw_val = r.get(marks_col)
+                if raw_val is None:
+                    other = [
+                        c for c in headers
+                        if c not in excluded and c != marks_col
+                        and not _is_roll_col(c) and _is_numeric_col(c, rows)
+                    ]
+                    computed, ok = 0.0, False
+                    for c in other:
+                        v = r.get(c)
+                        if v is not None:
+                            try:
+                                computed += float(str(v).replace(",", ""))
+                                ok = True
+                            except (TypeError, ValueError):
+                                pass
+                    if not ok:
+                        continue
+                    marks = computed
+                else:
+                    marks = float(str(raw_val).replace(",", ""))
+    
+                roll_val = ""
+                if roll_col:
+                    roll_val = str(r.get(roll_col, "")).strip()
+                    if roll_val.isdigit() and not _is_roll_col_high(roll_col):
+                        better = next(
+                            (c for c in headers
+                             if c not in excluded and c != name_col and c != marks_col
+                             and not _is_numeric_col(c, rows) and c != roll_col),
+                            None,
+                        )
+                        if better:
+                            roll_val = str(r.get(better, "")).strip()
+    
+                result.append({"name": raw_name, "roll_no": roll_val, "marks": marks})
+            except (TypeError, ValueError):
+                continue
+        return result
+    
+    
+    def _parse_raw_rows(file_path: str, filename: str) -> tuple[list[dict], list[str]]:
+        raw = _read_file_bytes(file_path)
+        if not raw:
+            return [], []
+        try:
+            ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+            if ext in ("xlsx", "xls"):
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+                ws = wb.active
+                rows_raw = list(ws.iter_rows(values_only=True))
+                if not rows_raw:
+                    return [], []
+                headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows_raw[0])]
+                rows = [dict(zip(headers, row)) for row in rows_raw[1:] if any(c is not None for c in row)]
+            else:
+                text = raw.decode("utf-8", errors="replace")
+                reader = csv.DictReader(io.StringIO(text))
+                rows = list(reader)
+                headers = list(reader.fieldnames or [])
+            return rows, headers
+        except Exception as e:
+            logger.warning("_parse_raw_rows error: %s", e)
+            return [], []
+    
+    
+    # \u2500\u2500 DB helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    
+    def _all_files() -> list[dict]:
+        with _db.SessionLocal() as session:
+            files = session.query(UploadedFile).order_by(UploadedFile.date.desc()).all()
+            return [f.to_dict() for f in files]
+    
+    
+>   def _file_record(file_id: str) -> UploadedFile | None:
+E   NameError: name 'UploadedFile' is not defined
+
+app\services\faculty_service.py:281: NameError
+=========================== short test summary info ===========================
+ERROR tests/test_register.py::TestRegister::test_register_student_success - N...
+============================== 1 error in 1.89s ===============================
+<sys>:0: ResourceWarning: unclosed 
+database in <sqlite3.Connection object 
+at 0x000002741463C310>

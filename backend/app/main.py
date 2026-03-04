@@ -1,8 +1,18 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.database import init_db
 from app.routers import auth, faculty, student
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialise the database (create tables + seed demo users) on startup."""
+    init_db()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -11,6 +21,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
+        lifespan=lifespan,
         description=(
             "REST API backend for the AI Student Performance Dashboard.\n\n"
             "**Default credentials (demo)**\n\n"
@@ -25,7 +36,6 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    # Hardcoded to cover all common Vite dev ports so login always works
     _cors_origins = [
         "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:5174", "http://127.0.0.1:5174",
