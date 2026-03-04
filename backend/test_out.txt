@@ -1,0 +1,95 @@
+﻿python : C:\Users\ssred\AppData\Ro
+aming\Python\Python314\site-packag
+es\pytest_asyncio\plugin.py:207: 
+PytestDeprecationWarning: The 
+configuration option "asyncio_defa
+ult_fixture_loop_scope" is unset.
+At line:1 char:1
++ python -m pytest tests/ -v 2>&1 
+| Out-File "test_out.txt" 
+-Encoding u ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : Not 
+   Specified: (C:\Users\ssred\..  
+  .cope" is unset.:String) [],    
+ RemoteException
+    + FullyQualifiedErrorId : Nat 
+   iveCommandError
+ 
+The event loop scope for 
+asynchronous fixtures will 
+default to the fixture caching 
+scope. Future versions of 
+pytest-asyncio will default the 
+loop scope for asynchronous 
+fixtures to function scope. Set 
+the default fixture loop scope 
+explicitly in order to avoid 
+unexpected behavior in the 
+future. Valid fixture loop scopes 
+are: "function", "class", 
+"module", "package", "session"
+
+  warnings.warn(PytestDeprecationW
+arning(_DEFAULT_FIXTURE_LOOP_SCOPE
+_UNSET))
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-8.3.4, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\ssred\projects\AI Student Performance Dashboard\backend
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-0.25.3
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None
+collecting ... collected 43 items
+
+tests/test_auth.py::TestLogin::test_faculty_login_success PASSED         [  2%]
+tests/test_auth.py::TestLogin::test_student_login_success PASSED         [  4%]
+tests/test_auth.py::TestLogin::test_wrong_password PASSED                [  6%]
+tests/test_auth.py::TestLogin::test_wrong_role PASSED                    [  9%]
+tests/test_auth.py::TestLogin::test_unknown_email PASSED                 [ 11%]
+tests/test_auth.py::TestMe::test_me_with_valid_token PASSED              [ 13%]
+tests/test_auth.py::TestMe::test_me_no_token PASSED                      [ 16%]
+tests/test_auth.py::TestMe::test_me_invalid_token PASSED                 [ 18%]
+tests/test_auth.py::TestLogout::test_logout_success PASSED               [ 20%]
+tests/test_auth.py::TestLogout::test_logout_no_token PASSED              [ 23%]
+tests/test_faculty.py::TestFacultyAuthorization::test_stats_no_token PASSED [ 25%]
+tests/test_faculty.py::TestFacultyAuthorization::test_stats_student_token_rejected PASSED [ 27%]
+tests/test_faculty.py::TestFacultyStats::test_get_stats PASSED           [ 30%]
+tests/test_faculty.py::TestFacultyUploads::test_list_uploads PASSED      [ 32%]
+tests/test_faculty.py::TestFacultyUploads::test_upload_file PASSED       [ 34%]
+tests/test_faculty.py::TestFacultyUploads::test_delete_uploaded_file PASSED [ 37%]
+tests/test_faculty.py::TestFacultyUploads::test_delete_nonexistent_file PASSED [ 39%]
+tests/test_faculty.py::TestFacultyAnalytics::test_get_analytics PASSED   [ 41%]
+tests/test_faculty.py::TestFacultyAnalytics::test_get_analytics_with_filters PASSED [ 44%]
+tests/test_faculty.py::TestFacultyAverage::test_generate_average_report PASSED [ 46%]
+tests/test_faculty.py::TestFacultyAverage::test_average_requires_two_files PASSED [ 48%]
+tests/test_faculty.py::TestFacultyFilterOptions::test_get_filter_options PASSED [ 51%]
+tests/test_faculty.py::TestFacultyAnalyzeUpload::test_analyze_demo_file PASSED [ 53%]
+tests/test_faculty.py::TestFacultyAnalyzeUpload::test_analyze_nonexistent_file PASSED [ 55%]
+tests/test_faculty.py::TestFacultyAnalyzeUpload::test_analyze_real_uploaded_file PASSED [ 58%]
+tests/test_register.py::TestRegister::test_register_student_success PASSED [ 60%]
+tests/test_register.py::TestRegister::test_register_faculty_success PASSED [ 62%]
+tests/test_register.py::TestRegister::test_register_then_login PASSED    [ 65%]
+tests/test_register.py::TestRegister::test_register_duplicate_email_same_role PASSED [ 67%]
+tests/test_register.py::TestRegister::test_register_same_email_different_role_allowed PASSED [ 69%]
+tests/test_register.py::TestRegister::test_register_short_password PASSED [ 72%]
+tests/test_register.py::TestRegister::test_register_invalid_role PASSED  [ 74%]
+tests/test_register.py::TestRegister::test_registered_user_can_access_protected_endpoint PASSED [ 76%]
+tests/test_student.py::TestStudentAuthorization::test_dashboard_no_token PASSED [ 79%]
+tests/test_student.py::TestStudentAuthorization::test_dashboard_faculty_token_rejected PASSED [ 81%]
+tests/test_student.py::TestStudentDashboard::test_full_dashboard PASSED  [ 83%]
+tests/test_student.py::TestStudentProfile::test_get_profile PASSED       [ 86%]
+tests/test_student.py::TestStudentSubjects::test_get_subjects PASSED     [ 88%]
+tests/test_student.py::TestStudentCharts::test_get_trend PASSED          [ 90%]
+tests/test_student.py::TestStudentCharts::test_get_comparison PASSED     [ 93%]
+tests/test_student.py::TestStudentCharts::test_get_radar PASSED          [ 95%]
+tests/test_student.py::TestStudentActivity::test_get_activity PASSED     [ 97%]
+tests/test_student.py::TestStudentSummary::test_get_summary PASSED       [100%]
+
+============================== warnings summary ===============================
+tests/test_auth.py::TestLogin::test_faculty_login_success
+  C:\Users\ssred\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:1190: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+    return asyncio.get_event_loop_policy()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 43 passed, 1 warning in 4.17s ========================

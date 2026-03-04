@@ -1,0 +1,125 @@
+﻿python : C:\Users\ssred\AppData\Roamin
+g\Python\Python314\site-packages\pytes
+t_asyncio\plugin.py:207: 
+PytestDeprecationWarning: The 
+configuration option 
+"asyncio_default_fixture_loop_scope" 
+is unset.
+At line:1 char:1
++ python -m pytest tests/ --tb=long 
+2>&1 | Out-File -FilePath "test_out 
+...
++ 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpec 
+   ified: (C:\Users\ssred\...cope" i  
+  s unset.:String) [], RemoteExcept   
+ ion
+    + FullyQualifiedErrorId : NativeC 
+   ommandError
+ 
+The event loop scope for asynchronous 
+fixtures will default to the fixture 
+caching scope. Future versions of 
+pytest-asyncio will default the loop 
+scope for asynchronous fixtures to 
+function scope. Set the default 
+fixture loop scope explicitly in 
+order to avoid unexpected behavior in 
+the future. Valid fixture loop scopes 
+are: "function", "class", "module", 
+"package", "session"
+
+  warnings.warn(PytestDeprecationWarni
+ng(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-8.3.4, pluggy-1.6.0
+rootdir: C:\Users\ssred\projects\AI Student Performance Dashboard\backend
+plugins: anyio-4.12.1, asyncio-0.25.3
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None
+collected 32 items
+
+tests\test_auth.py ......F..F                                            [ 31%]
+tests\test_faculty.py F...........                                       [ 68%]
+tests\test_student.py F.F.......                                         [100%]
+
+================================== FAILURES ===================================
+___________________________ TestMe.test_me_no_token ___________________________
+
+self = <tests.test_auth.TestMe object at 0x000001FDC4172490>
+client = <starlette.testclient.TestClient object at 0x000001FDC42BF230>
+
+    def test_me_no_token(self, client: TestClient):
+        res = client.get(f"{BASE}/me")
+>       assert res.status_code == 403  # HTTPBearer returns 403 when header missing
+E       assert 401 == 403
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\test_auth.py:78: AssertionError
+_______________________ TestLogout.test_logout_no_token _______________________
+
+self = <tests.test_auth.TestLogout object at 0x000001FDC4172C10>
+client = <starlette.testclient.TestClient object at 0x000001FDC42BF230>
+
+    def test_logout_no_token(self, client: TestClient):
+        res = client.post(f"{BASE}/logout")
+>       assert res.status_code == 403
+E       assert 401 == 403
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\test_auth.py:95: AssertionError
+________________ TestFacultyAuthorization.test_stats_no_token _________________
+
+self = <tests.test_faculty.TestFacultyAuthorization object at 0x000001FDC4172FD0>
+client = <starlette.testclient.TestClient object at 0x000001FDC42BF230>
+
+    def test_stats_no_token(self, client: TestClient):
+>       assert client.get(f"{BASE}/stats").status_code == 403
+E       AssertionError: assert 401 == 403
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+E        +    where <Response [401 Unauthorized]> = get('/api/v1/faculty/stats')
+E        +      where get = <starlette.testclient.TestClient object at 0x000001FDC42BF230>.get
+
+tests\test_faculty.py:16: AssertionError
+______________ TestStudentAuthorization.test_dashboard_no_token _______________
+
+self = <tests.test_student.TestStudentAuthorization object at 0x000001FDC4173C50>
+client = <starlette.testclient.TestClient object at 0x000001FDC42BF230>
+
+    def test_dashboard_no_token(self, client: TestClient):
+>       assert client.get(f"{BASE}/dashboard").status_code == 403
+E       AssertionError: assert 401 == 403
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+E        +    where <Response [401 Unauthorized]> = get('/api/v1/student/dashboard')
+E        +      where get = <starlette.testclient.TestClient object at 0x000001FDC42BF230>.get
+
+tests\test_student.py:15: AssertionError
+__________________ TestStudentDashboard.test_full_dashboard ___________________
+
+self = <tests.test_student.TestStudentDashboard object at 0x000001FDC4173ED0>
+client = <starlette.testclient.TestClient object at 0x000001FDC42BF230>
+student_headers = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MiIsInJvbGUiOiJzdHVkZW50IiwiZXhwIjoxNzcyNTU1NTYwfQ.VDmxqSvGpOAoBVPt3K-lxQ8pa_7onCeooKU7rZnAy-g'}
+
+    def test_full_dashboard(self, client: TestClient, student_headers: dict):
+        res = client.get(f"{BASE}/dashboard", headers=student_headers)
+        assert res.status_code == 200
+        body = res.json()
+        # Should contain all sub-sections
+        assert "profile" in body
+>       assert "subjects" in body
+E       AssertionError: assert 'subjects' in {'class_comparison': [{'classAvg': 75, 'subject': 'DS', 'you': 88}, {'classAvg': 72, 'subject': 'Algo', 'you': 76}, {'...port', 'type': 'Lab'}, {'date': 'Feb 10, 2026', 'score': '42/50', 'title': 'CN Project Demo', 'type': 'Project'}], ...}
+
+tests\test_student.py:28: AssertionError
+============================== warnings summary ===============================
+tests/test_auth.py::TestLogin::test_faculty_login_success
+  C:\Users\ssred\AppData\Roaming\Python\Python314\site-packages\pytest_asyncio\plugin.py:1190: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+    return asyncio.get_event_loop_policy()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_auth.py::TestMe::test_me_no_token - assert 401 == 403
+FAILED tests/test_auth.py::TestLogout::test_logout_no_token - assert 401 == 403
+FAILED tests/test_faculty.py::TestFacultyAuthorization::test_stats_no_token
+FAILED tests/test_student.py::TestStudentAuthorization::test_dashboard_no_token
+FAILED tests/test_student.py::TestStudentDashboard::test_full_dashboard - Ass...
+=================== 5 failed, 27 passed, 1 warning in 1.52s ===================
