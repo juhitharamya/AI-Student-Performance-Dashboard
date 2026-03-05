@@ -1,6 +1,8 @@
 """UploadedFile ORM model."""
 
-from sqlalchemy import Column, String
+from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, String
 from app.core.database import Base
 
 
@@ -16,6 +18,11 @@ class UploadedFile(Base):
     section    = Column(String, nullable=True, default="")
     size       = Column(String, nullable=True, default="")
     file_path  = Column(String, nullable=False)        # absolute path on disk
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
 
     def to_dict(self) -> dict:
         return {

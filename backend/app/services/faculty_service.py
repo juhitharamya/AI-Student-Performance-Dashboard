@@ -14,7 +14,7 @@ import logging
 import os
 import statistics
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -22,7 +22,9 @@ from fastapi import HTTPException, UploadFile, status
 import app.core.database as _db
 from app.core.database import UPLOAD_DIR
 from app.models.uploaded_file import UploadedFile
+from app.models.student_mark import StudentMark
 from app.core import data_store as db  # only for filter constants (DEPARTMENTS etc.)
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +277,7 @@ def _parse_raw_rows(file_path: str, filename: str) -> tuple[list[dict], list[str
 
 def _all_files() -> list[dict]:
     with _db.SessionLocal() as session:
-        files = session.query(UploadedFile).order_by(UploadedFile.date.desc()).all()
+        files = session.query(UploadedFile).order_by(UploadedFile.created_at.desc()).all()
         return [f.to_dict() for f in files]
 
 
@@ -316,6 +318,21 @@ def _marks_from_files(files: list[dict]) -> list[dict]:
     for f in files:
         result.extend(_parse_marks(f["id"]))
     return result
+
+
+def _marks_from_file_ids(file_ids: list[str]) -> list[dict]:
+    if not file_ids:
+        return []
+    with _db.SessionLocal() as session:
+        rows = (
+            session.query(StudentMark.student_name, StudentMark.roll_no, StudentMark.marks)
+            .filter(StudentMark.uploaded_file_id.in_(file_ids))
+            .all()
+        )
+        return [
+            {"name": name, "roll_no": (roll_no or ""), "marks": float(marks)}
+            for (name, roll_no, marks) in rows
+        ]
 
 
 # ── Grade distribution ────────────────────────────────────────────────────────
@@ -368,7 +385,7 @@ def get_stats(
     subject: str | None = None,
 ) -> dict:
     files = _filter_files(department, year, section, subject)
-    all_marks = _marks_from_files(files)
+    all_marks = _marks_from_file_ids([f["id"] for f in files])
     total_docs = len(_all_files())
 
     if not all_marks:
@@ -393,7 +410,7 @@ def get_files() -> list[dict]:
 
 
 def get_file_by_id(file_id: str) -> dict:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         rec = session.get(UploadedFile, file_id)
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
@@ -427,26 +444,71 @@ def add_file(
     # Write bytes to disk
     Path(file_path).write_bytes(content)
 
-    # Insert metadata into DB
-    with SessionLocal() as session:
-        rec = UploadedFile(
-            id=file_id,
-            name=fname,
-            date=datetime.now().strftime("%b %d, %Y"),
-            subject=subject or "General",
-            department=department or "",
-            year=year or "",
-            section=section or "",
-            size=size_label,
-            file_path=file_path,
-        )
-        session.add(rec)
-        session.commit()
-        return rec.to_dict()
+    # Insert metadata + parsed marks into DB (single commit)
+    with _db.SessionLocal() as session:
+        try:
+            now = datetime.now(timezone.utc)
+            rec = UploadedFile(
+                id=file_id,
+                name=fname,
+                date=datetime.now().strftime("%b %d, %Y"),
+                subject=subject or "General",
+                department=department or "",
+                year=year or "",
+                section=section or "",
+                size=size_label,
+                file_path=file_path,
+                created_at=now,
+            )
+            session.add(rec)
+
+            marks_rows = _parse_marks_from_path(file_path, fname)
+            if not marks_rows:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Could not extract student marks. Ensure the file has "
+                        "'name'/'student' and 'marks'/'score'/'total' columns."
+                    ),
+                )
+
+            marks_vals = [m["marks"] for m in marks_rows]
+            max_mark = max(marks_vals) if marks_vals else 0
+            if max_mark > 100:
+                scale = 100.0 / max_mark
+                for i, m in enumerate(marks_rows):
+                    m["marks"] = round(marks_vals[i] * scale, 1)
+
+            mark_objs: list[StudentMark] = []
+            for m in marks_rows:
+                student_name = (m.get("name") or "").strip() or "Unknown"
+                roll_no = (m.get("roll_no") or "").strip() or None
+                mark_objs.append(
+                    StudentMark(
+                        id=str(uuid.uuid4()),
+                        uploaded_file_id=file_id,
+                        student_name=student_name,
+                        roll_no=roll_no,
+                        marks=float(m["marks"]),
+                        created_at=now,
+                    )
+                )
+
+            session.add_all(mark_objs)
+            session.commit()
+            return rec.to_dict()
+        except Exception:
+            session.rollback()
+            # Don't leave dead files on disk if DB insert fails / parse fails.
+            try:
+                os.unlink(file_path)
+            except FileNotFoundError:
+                pass
+            raise
 
 
 def delete_file(file_id: str) -> dict:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         rec = session.get(UploadedFile, file_id)
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
@@ -456,13 +518,17 @@ def delete_file(file_id: str) -> dict:
             os.unlink(rec.file_path)
         except FileNotFoundError:
             pass
+        # Delete derived marks (SQLite FK cascade isn't guaranteed unless PRAGMA is enabled).
+        session.query(StudentMark).filter(StudentMark.uploaded_file_id == file_id).delete(
+            synchronize_session=False
+        )
         session.delete(rec)
         session.commit()
     return {"message": f"File '{name}' deleted successfully."}
 
 
 def analyze_file(file_id: str) -> dict:
-    with SessionLocal() as session:
+    with _db.SessionLocal() as session:
         rec = session.get(UploadedFile, file_id)
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
@@ -546,7 +612,7 @@ def analyze_file(file_id: str) -> dict:
 
 def get_analytics(department, year, section, subject) -> dict:
     files = _filter_files(department, year, section, subject)
-    all_marks = _marks_from_files(files)
+    all_marks = _marks_from_file_ids([f["id"] for f in files])
     if not all_marks:
         return {
             "student_marks": [], "performance_trend": [], "grade_distribution": [],
@@ -571,14 +637,21 @@ def get_analytics(department, year, section, subject) -> dict:
 
 def _compute_section_breakdown(department, year, subject) -> list[dict]:
     section_map: dict[str, list[float]] = {}
-    for f in _all_files():
-        if department and f.get("department") and f["department"] != department: continue
-        if year      and f.get("year")       and f["year"]       != year:       continue
-        if subject   and f.get("subject")    and f["subject"]    != subject:    continue
-        sec = f.get("section") or "Unknown"
-        marks = _parse_marks(f["id"])
-        if marks:
-            section_map.setdefault(sec, []).extend(m["marks"] for m in marks)
+    with _db.SessionLocal() as session:
+        q = (
+            session.query(UploadedFile.section, StudentMark.marks)
+            .join(StudentMark, StudentMark.uploaded_file_id == UploadedFile.id)
+        )
+        if department:
+            q = q.filter(or_(UploadedFile.department == department, UploadedFile.department == "", UploadedFile.department.is_(None)))
+        if year:
+            q = q.filter(or_(UploadedFile.year == year, UploadedFile.year == "", UploadedFile.year.is_(None)))
+        if subject:
+            q = q.filter(or_(UploadedFile.subject == subject, UploadedFile.subject == "", UploadedFile.subject.is_(None)))
+
+        for sec, marks in q.all():
+            sec_label = sec or "Unknown"
+            section_map.setdefault(sec_label, []).append(float(marks))
     result = []
     for sec, vals in sorted(section_map.items()):
         avg = round(statistics.mean(vals), 1)
@@ -590,10 +663,9 @@ def _compute_section_breakdown(department, year, subject) -> list[dict]:
 def generate_average_report(file_ids: list[str]) -> dict:
     if len(file_ids) < 2:
         raise HTTPException(status_code=400, detail="At least 2 files must be selected.")
-    combined: list[dict] = []
+    combined = _marks_from_file_ids(file_ids)
     for fid in file_ids:
-        get_file_by_id(fid)
-        combined.extend(_parse_marks(fid))
+        get_file_by_id(fid)  # validate IDs (keeps error behavior)
     if not combined:
         raise HTTPException(status_code=422, detail="No parseable data found in the selected files.")
     marks_vals = [m["marks"] for m in combined]

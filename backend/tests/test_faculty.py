@@ -6,6 +6,9 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
+import app.core.database as _db
+from app.models.student_mark import StudentMark
+
 BASE = "/api/v1/faculty"
 
 
@@ -48,6 +51,14 @@ class TestFacultyUploads:
         assert body["name"] == "test_scores.csv"
         assert body["subject"] == "Algorithms"
         assert "id" in body
+
+        with _db.SessionLocal() as session:
+            cnt = (
+                session.query(StudentMark)
+                .filter(StudentMark.uploaded_file_id == body["id"])
+                .count()
+            )
+            assert cnt == 2
         # Store the id on the class for the delete test
         TestFacultyUploads._uploaded_id = body["id"]
 

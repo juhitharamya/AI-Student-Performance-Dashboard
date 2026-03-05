@@ -117,12 +117,13 @@ def register_user(body: RegisterRequest) -> dict:
 
         token = create_access_token({"sub": new_user.id, "role": new_user.role})
         return {
-            "access_token":   token,
-            "token_type":     "bearer",
-            "role":           new_user.role,
+            "id":             new_user.id,
             "name":           new_user.name,
             "email":          new_user.email,
+            "role":           new_user.role,
             "avatar_initials": new_user.avatar_initials,
+            "access_token":   token,
+            "token_type":     "bearer",
         }
     finally:
         db.close()
@@ -146,3 +147,14 @@ def get_user_by_id(user_id: str) -> dict | None:
         return u.to_dict() if u else None
     finally:
         db.close()
+
+
+def get_me(current_user: dict) -> dict:
+    """Return the response payload for GET /auth/me."""
+    return {
+        "id": current_user.get("id"),
+        "name": current_user.get("name"),
+        "email": current_user.get("email"),
+        "role": current_user.get("role"),
+        "avatar_initials": current_user.get("avatar_initials", "??"),
+    }

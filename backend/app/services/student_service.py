@@ -7,6 +7,8 @@ import statistics
 import app.core.database as _db
 from app.models.user import User
 from app.models.uploaded_file import UploadedFile
+from app.models.student_mark import StudentMark
+from sqlalchemy import func
 
 _SUBJECT_COLORS = [
     "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b",
@@ -21,45 +23,51 @@ def _get_user(user_id: str) -> dict | None:
 
 
 def _all_file_records() -> list[dict]:
-    """Return all uploaded file records (metadata + file_path) from DB."""
-    with _db.SessionLocal() as db:
-        files = db.query(UploadedFile).all()
-        # Include file_path so student_service can call _parse_marks_from_path
-        return [
-            {**f.to_dict(), "file_path": f.file_path}
-            for f in files
-        ]
+    """Deprecated: student dashboards no longer parse files from disk."""
+    return []
 
 
 def _parse_marks_for_user(user: dict) -> list[dict]:
     """
-    Scan all faculty-uploaded files and return mark records that belong to
-    this student (matched by roll_no or name, case-insensitive).
-    """
-    from app.services.faculty_service import _parse_marks_from_path
+    Return the most recent mark per subject for this student.
 
+    Matching rules:
+      - Prefer exact roll_no match when available
+      - Else fallback to case-insensitive name contains match
+    """
     student_name = (user.get("name") or "").strip().lower()
     student_roll = (user.get("roll_no") or "").strip().lower()
 
-    results = []
-    for f in _all_file_records():
-        marks_list = _parse_marks_from_path(f["file_path"], f["name"])
-        for m in marks_list:
-            row_name = (m.get("name") or "").strip().lower()
-            row_roll = (m.get("roll_no") or "").strip().lower()
-            name_match = student_name and student_name in row_name
-            roll_match = student_roll and student_roll == row_roll
-            if name_match or roll_match:
-                results.append({
-                    "subject":   f.get("subject", "Unknown"),
-                    "marks":     m["marks"],
-                    "roll_no":   m.get("roll_no", ""),
-                    "name":      m.get("name", ""),
-                    "file_id":   f["id"],
-                    "file_path": f["file_path"],
-                    "file_name": f["name"],
-                })
-                break
+    with _db.SessionLocal() as db:
+        q = (
+            db.query(StudentMark, UploadedFile)
+            .join(UploadedFile, UploadedFile.id == StudentMark.uploaded_file_id)
+        )
+        if student_roll:
+            q = q.filter(func.lower(StudentMark.roll_no) == student_roll)
+        elif student_name:
+            q = q.filter(func.lower(StudentMark.student_name).like(f"%{student_name}%"))
+        else:
+            return []
+
+        rows = q.order_by(UploadedFile.created_at.desc()).all()
+
+    seen_subjects: set[str] = set()
+    results: list[dict] = []
+    for sm, uf in rows:
+        subj = uf.subject or "Unknown"
+        if subj in seen_subjects:
+            continue
+        seen_subjects.add(subj)
+        results.append(
+            {
+                "subject": subj,
+                "marks": float(sm.marks),
+                "roll_no": sm.roll_no or "",
+                "name": sm.student_name,
+                "file_id": uf.id,
+            }
+        )
     return results
 
 
@@ -79,16 +87,31 @@ def _make_initials(name: str) -> str:
 
 
 def _collect_all_scores(student_marks: list[dict]) -> list[float]:
-    from app.services.faculty_service import _parse_marks_from_path
-    all_scores: list[float] = []
-    seen: set[str] = set()
-    for m in student_marks:
-        fid = m.get("file_id", "")
-        if fid and fid not in seen:
-            seen.add(fid)
-            for row in _parse_marks_from_path(m["file_path"], m["file_name"]):
-                all_scores.append(row["marks"])
-    return all_scores
+    file_ids = [m.get("file_id") for m in student_marks if m.get("file_id")]
+    if not file_ids:
+        return []
+    with _db.SessionLocal() as db:
+        rows = (
+            db.query(StudentMark.marks)
+            .filter(StudentMark.uploaded_file_id.in_(file_ids))
+            .all()
+        )
+        return [float(r[0]) for r in rows]
+
+
+def _class_avg_by_file(file_ids: list[str]) -> dict[str, float]:
+    if not file_ids:
+        return {}
+    with _db.SessionLocal() as db:
+        rows = (
+            db.query(StudentMark.uploaded_file_id, StudentMark.marks)
+            .filter(StudentMark.uploaded_file_id.in_(file_ids))
+            .all()
+        )
+    buckets: dict[str, list[float]] = {}
+    for fid, marks in rows:
+        buckets.setdefault(fid, []).append(float(marks))
+    return {fid: round(statistics.mean(vals), 1) if vals else 0.0 for fid, vals in buckets.items()}
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -148,27 +171,25 @@ def get_performance_trend(user_id: str = "") -> list[dict]:
     user = _get_user(user_id)
     if not user: return []
     marks_data = _parse_marks_for_user(user)
-    from app.services.faculty_service import _parse_marks_from_path
-    trend = []
-    for m in marks_data:
-        all_marks = [r["marks"] for r in _parse_marks_from_path(m["file_path"], m["file_name"])]
-        class_avg = round(statistics.mean(all_marks), 1) if all_marks else 0
-        trend.append({"month": m["subject"][:8], "score": round(m["marks"]), "classAvg": class_avg})
-    return trend
+    file_ids = [m["file_id"] for m in marks_data]
+    class_avg = _class_avg_by_file(file_ids)
+    return [
+        {"month": m["subject"][:8], "score": round(m["marks"]), "classAvg": class_avg.get(m["file_id"], 0)}
+        for m in marks_data
+    ]
 
 
 def get_class_comparison(user_id: str = "") -> list[dict]:
     if not user_id: return []
     user = _get_user(user_id)
     if not user: return []
-    from app.services.faculty_service import _parse_marks_from_path
     marks_data = _parse_marks_for_user(user)
-    result = []
-    for m in marks_data:
-        all_marks = [r["marks"] for r in _parse_marks_from_path(m["file_path"], m["file_name"])]
-        class_avg = round(statistics.mean(all_marks), 1) if all_marks else 0
-        result.append({"subject": m["subject"][:8], "you": round(m["marks"]), "classAvg": class_avg})
-    return result
+    file_ids = [m["file_id"] for m in marks_data]
+    class_avg = _class_avg_by_file(file_ids)
+    return [
+        {"subject": m["subject"][:8], "you": round(m["marks"]), "classAvg": class_avg.get(m["file_id"], 0)}
+        for m in marks_data
+    ]
 
 
 def get_radar_data(user_id: str = "") -> list[dict]:
