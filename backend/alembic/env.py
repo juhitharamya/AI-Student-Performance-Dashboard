@@ -6,7 +6,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 # Ensure `backend/` is on sys.path so `import app.*` works when running Alembic.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -44,12 +44,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    config.set_main_option("sqlalchemy.url", _get_database_url())
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Avoid configparser interpolation issues (e.g. `%40` in URL-encoded passwords)
+    # by creating the engine directly from the URL.
+    url = _get_database_url()
+    connectable = create_engine(url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
@@ -62,4 +60,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

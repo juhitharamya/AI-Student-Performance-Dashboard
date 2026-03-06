@@ -36,15 +36,20 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    _cors_origins = [
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:5174", "http://127.0.0.1:5174",
-        "http://localhost:5175", "http://127.0.0.1:5175",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    ]
+    _cors_origins = sorted(
+        {
+            *settings.cors_origins,
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:5174", "http://127.0.0.1:5174",
+            "http://localhost:5175", "http://127.0.0.1:5175",
+            "http://localhost:3000", "http://127.0.0.1:3000",
+        }
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins,
+        # Be permissive for local dev ports (fixes "Failed to fetch" if Vite picks a new port).
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

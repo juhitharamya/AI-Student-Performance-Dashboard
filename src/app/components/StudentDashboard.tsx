@@ -22,6 +22,20 @@ export function StudentDashboard() {
   // Read profile from localStorage for immediate display
   const profile = JSON.parse(localStorage.getItem(api.PROFILE_KEY) ?? "{}") as api.AuthProfile;
 
+  // Route guard: redirect to login when token is missing/invalid or role is wrong.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await api.getMe();
+        if (me.role !== "student") throw new Error("Wrong role");
+      } catch {
+        localStorage.removeItem(api.TOKEN_KEY);
+        localStorage.removeItem(api.PROFILE_KEY);
+        navigate("/");
+      }
+    })();
+  }, [navigate]);
+
   useEffect(() => {
     (async () => {
       try {

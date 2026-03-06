@@ -4,6 +4,7 @@ Tests for all /faculty/* endpoints — data access + authorization guards.
 
 import io
 import pytest
+import uuid
 from fastapi.testclient import TestClient
 
 import app.core.database as _db
@@ -73,6 +74,41 @@ class TestFacultyUploads:
     def test_delete_nonexistent_file(self, client: TestClient, faculty_headers: dict):
         res = client.delete(f"{BASE}/uploads/nonexistent-id", headers=faculty_headers)
         assert res.status_code == 404
+
+
+class TestFacultyUploadPrivacy:
+    def _login_new_faculty(self, client: TestClient) -> dict:
+        email = f"faculty_{uuid.uuid4().hex[:8]}@example.edu"
+        res = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "pass1234", "role": "faculty"},
+        )
+        assert res.status_code == 200
+        token = res.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_faculty_cannot_see_other_faculty_uploads(self, client: TestClient, faculty_headers: dict):
+        # Upload as the demo faculty (u1)
+        csv_content = b"name,marks\nAlice,90\nBob,75\n"
+        upload_res = client.post(
+            f"{BASE}/uploads",
+            headers=faculty_headers,
+            files={"file": ("private.csv", io.BytesIO(csv_content), "text/csv")},
+            data={"subject": "Private"},
+        )
+        assert upload_res.status_code == 201
+        file_id = upload_res.json()["id"]
+
+        # Another faculty account should not see or access it
+        other_headers = self._login_new_faculty(client)
+
+        list_res = client.get(f"{BASE}/uploads", headers=other_headers)
+        assert list_res.status_code == 200
+        ids = [f["id"] for f in list_res.json().get("files", [])]
+        assert file_id not in ids
+
+        assert client.get(f"{BASE}/uploads/{file_id}/analyze", headers=other_headers).status_code == 404
+        assert client.delete(f"{BASE}/uploads/{file_id}", headers=other_headers).status_code == 404
 
 
 class TestFacultyAnalytics:

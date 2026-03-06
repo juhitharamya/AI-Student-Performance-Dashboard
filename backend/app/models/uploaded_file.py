@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, ForeignKey, String
 from app.core.database import Base
 
 
@@ -18,6 +18,12 @@ class UploadedFile(Base):
     section    = Column(String, nullable=True, default="")
     size       = Column(String, nullable=True, default="")
     file_path  = Column(String, nullable=False)        # absolute path on disk
+    uploaded_by_user_id = Column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

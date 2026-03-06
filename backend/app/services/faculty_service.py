@@ -24,7 +24,7 @@ from app.core.database import UPLOAD_DIR
 from app.models.uploaded_file import UploadedFile
 from app.models.student_mark import StudentMark
 from app.core import data_store as db  # only for filter constants (DEPARTMENTS etc.)
-from sqlalchemy import or_
+
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,32 @@ def _col_mean(col: str, rows: list[dict]) -> float:
         except (TypeError, ValueError):
             pass
     return sum(vals) / len(vals) if vals else 0.0
+
+
+def _normalize_roll_no(value) -> str:
+    """
+    Normalize roll numbers coming from CSV/XLSX cells.
+
+    Common issues:
+    - Excel stores numbers as floats: 2301 -> 2301.0
+    - Leading/trailing whitespace
+    """
+    if value is None:
+        return ""
+
+    # Preserve non-numeric IDs (e.g. "CS2023045") as strings.
+    if isinstance(value, (int,)):
+        return str(value).strip()
+
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return str(value).strip()
+
+    s = str(value).strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        return s[:-2]
+    return s
 
 
 # ── File parsing ──────────────────────────────────────────────────────────────
@@ -230,7 +256,7 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
 
             roll_val = ""
             if roll_col:
-                roll_val = str(r.get(roll_col, "")).strip()
+                roll_val = _normalize_roll_no(r.get(roll_col, ""))
                 if roll_val.isdigit() and not _is_roll_col_high(roll_col):
                     better = next(
                         (c for c in headers
@@ -239,7 +265,7 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
                         None,
                     )
                     if better:
-                        roll_val = str(r.get(better, "")).strip()
+                        roll_val = _normalize_roll_no(r.get(better, ""))
 
             result.append({"name": raw_name, "roll_no": roll_val, "marks": marks})
         except (TypeError, ValueError):
@@ -275,15 +301,27 @@ def _parse_raw_rows(file_path: str, filename: str) -> tuple[list[dict], list[str
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def _all_files() -> list[dict]:
+def _all_files(faculty_user_id: str) -> list[dict]:
     with _db.SessionLocal() as session:
-        files = session.query(UploadedFile).order_by(UploadedFile.created_at.desc()).all()
+        files = (
+            session.query(UploadedFile)
+            .filter(UploadedFile.uploaded_by_user_id == faculty_user_id)
+            .order_by(UploadedFile.created_at.desc())
+            .all()
+        )
         return [f.to_dict() for f in files]
 
 
-def _file_record(file_id: str) -> UploadedFile | None:
+def _file_record(file_id: str, faculty_user_id: str) -> UploadedFile | None:
     with _db.SessionLocal() as session:
-        return session.get(UploadedFile, file_id)
+        return (
+            session.query(UploadedFile)
+            .filter(
+                UploadedFile.id == file_id,
+                UploadedFile.uploaded_by_user_id == faculty_user_id,
+            )
+            .first()
+        )
 
 
 def _parse_marks(file_id: str) -> list[dict]:
@@ -297,18 +335,19 @@ def _parse_marks(file_id: str) -> list[dict]:
 # ── Filtering helpers ─────────────────────────────────────────────────────────
 
 def _filter_files(
+    faculty_user_id: str,
     department: str | None = None,
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
 ) -> list[dict]:
-    files = _all_files()
+    files = _all_files(faculty_user_id)
     result = []
     for f in files:
-        if department and f.get("department") and f["department"] != department: continue
-        if year      and f.get("year")       and f["year"]       != year:       continue
-        if section   and f.get("section")    and f["section"]    != section:    continue
-        if subject   and f.get("subject")    and f["subject"]    != subject:    continue
+        if department is not None and department != "" and (f.get("department") or "") != department: continue
+        if year is not None and year != "" and (f.get("year") or "") != year: continue
+        if section is not None and section != "" and (f.get("section") or "") != section: continue
+        if subject is not None and subject != "" and (f.get("subject") or "") != subject: continue
         result.append(f)
     return result
 
@@ -379,14 +418,15 @@ def _col_stats_multi(rows: list[dict], score_cols: list[str]) -> list[dict]:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_stats(
+    faculty_user_id: str,
     department: str | None = None,
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
 ) -> dict:
-    files = _filter_files(department, year, section, subject)
+    files = _filter_files(faculty_user_id, department, year, section, subject)
     all_marks = _marks_from_file_ids([f["id"] for f in files])
-    total_docs = len(_all_files())
+    total_docs = len(_all_files(faculty_user_id))
 
     if not all_marks:
         return {
@@ -405,13 +445,20 @@ def get_stats(
     }
 
 
-def get_files() -> list[dict]:
-    return _all_files()
+def get_files(faculty_user_id: str) -> list[dict]:
+    return _all_files(faculty_user_id)
 
 
-def get_file_by_id(file_id: str) -> dict:
+def get_file_by_id(file_id: str, faculty_user_id: str) -> dict:
     with _db.SessionLocal() as session:
-        rec = session.get(UploadedFile, file_id)
+        rec = (
+            session.query(UploadedFile)
+            .filter(
+                UploadedFile.id == file_id,
+                UploadedFile.uploaded_by_user_id == faculty_user_id,
+            )
+            .first()
+        )
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
         return rec.to_dict()
@@ -423,6 +470,7 @@ def add_file(
     department: str = "",
     year: str = "",
     section: str = "",
+    faculty_user_id: str = "",
 ) -> dict:
     content = upload.file.read()
     size_bytes = len(content)
@@ -452,15 +500,20 @@ def add_file(
                 id=file_id,
                 name=fname,
                 date=datetime.now().strftime("%b %d, %Y"),
-                subject=subject or "General",
-                department=department or "",
-                year=year or "",
-                section=section or "",
+                subject=(subject or "General").strip() or "General",
+                department=(department or "").strip(),
+                year=(year or "").strip(),
+                section=(section or "").strip(),
                 size=size_label,
                 file_path=file_path,
+                uploaded_by_user_id=faculty_user_id or None,
                 created_at=now,
             )
             session.add(rec)
+            # Ensure the parent row exists before inserting dependent marks rows.
+            # Without this explicit flush, SQLAlchemy may batch INSERTs in an order
+            # that violates the FK constraint on Postgres.
+            session.flush()
 
             marks_rows = _parse_marks_from_path(file_path, fname)
             if not marks_rows:
@@ -482,7 +535,7 @@ def add_file(
             mark_objs: list[StudentMark] = []
             for m in marks_rows:
                 student_name = (m.get("name") or "").strip() or "Unknown"
-                roll_no = (m.get("roll_no") or "").strip() or None
+                roll_no = _normalize_roll_no(m.get("roll_no") or "") or None
                 mark_objs.append(
                     StudentMark(
                         id=str(uuid.uuid4()),
@@ -507,9 +560,16 @@ def add_file(
             raise
 
 
-def delete_file(file_id: str) -> dict:
+def delete_file(file_id: str, faculty_user_id: str) -> dict:
     with _db.SessionLocal() as session:
-        rec = session.get(UploadedFile, file_id)
+        rec = (
+            session.query(UploadedFile)
+            .filter(
+                UploadedFile.id == file_id,
+                UploadedFile.uploaded_by_user_id == faculty_user_id,
+            )
+            .first()
+        )
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
         name = rec.name
@@ -527,9 +587,16 @@ def delete_file(file_id: str) -> dict:
     return {"message": f"File '{name}' deleted successfully."}
 
 
-def analyze_file(file_id: str) -> dict:
+def analyze_file(file_id: str, faculty_user_id: str) -> dict:
     with _db.SessionLocal() as session:
-        rec = session.get(UploadedFile, file_id)
+        rec = (
+            session.query(UploadedFile)
+            .filter(
+                UploadedFile.id == file_id,
+                UploadedFile.uploaded_by_user_id == faculty_user_id,
+            )
+            .first()
+        )
         if not rec:
             raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
         file_meta = rec.to_dict()
@@ -610,8 +677,8 @@ def analyze_file(file_id: str) -> dict:
     }
 
 
-def get_analytics(department, year, section, subject) -> dict:
-    files = _filter_files(department, year, section, subject)
+def get_analytics(faculty_user_id: str, department, year, section, subject) -> dict:
+    files = _filter_files(faculty_user_id, department, year, section, subject)
     all_marks = _marks_from_file_ids([f["id"] for f in files])
     if not all_marks:
         return {
@@ -622,7 +689,7 @@ def get_analytics(department, year, section, subject) -> dict:
     marks_vals = [m["marks"] for m in all_marks]
     avg = round(statistics.mean(marks_vals), 1)
     grade_dist = _grade_distribution(marks_vals)
-    section_breakdown = _compute_section_breakdown(department, year, subject)
+    section_breakdown = _compute_section_breakdown(faculty_user_id, department, year, subject)
     from app.services import ml_service
     ml_result = ml_service.predict(all_marks)
     return {
@@ -635,19 +702,20 @@ def get_analytics(department, year, section, subject) -> dict:
     }
 
 
-def _compute_section_breakdown(department, year, subject) -> list[dict]:
+def _compute_section_breakdown(faculty_user_id: str, department, year, subject) -> list[dict]:
     section_map: dict[str, list[float]] = {}
     with _db.SessionLocal() as session:
         q = (
             session.query(UploadedFile.section, StudentMark.marks)
             .join(StudentMark, StudentMark.uploaded_file_id == UploadedFile.id)
+            .filter(UploadedFile.uploaded_by_user_id == faculty_user_id)
         )
         if department:
-            q = q.filter(or_(UploadedFile.department == department, UploadedFile.department == "", UploadedFile.department.is_(None)))
+            q = q.filter(UploadedFile.department == department)
         if year:
-            q = q.filter(or_(UploadedFile.year == year, UploadedFile.year == "", UploadedFile.year.is_(None)))
+            q = q.filter(UploadedFile.year == year)
         if subject:
-            q = q.filter(or_(UploadedFile.subject == subject, UploadedFile.subject == "", UploadedFile.subject.is_(None)))
+            q = q.filter(UploadedFile.subject == subject)
 
         for sec, marks in q.all():
             sec_label = sec or "Unknown"
@@ -660,12 +728,13 @@ def _compute_section_breakdown(department, year, subject) -> list[dict]:
     return result
 
 
-def generate_average_report(file_ids: list[str]) -> dict:
+def generate_average_report(file_ids: list[str], faculty_user_id: str) -> dict:
     if len(file_ids) < 2:
         raise HTTPException(status_code=400, detail="At least 2 files must be selected.")
-    combined = _marks_from_file_ids(file_ids)
+    # Validate ownership up-front (avoid leaking existence across faculty accounts).
     for fid in file_ids:
-        get_file_by_id(fid)  # validate IDs (keeps error behavior)
+        get_file_by_id(fid, faculty_user_id)
+    combined = _marks_from_file_ids(file_ids)
     if not combined:
         raise HTTPException(status_code=422, detail="No parseable data found in the selected files.")
     marks_vals = [m["marks"] for m in combined]

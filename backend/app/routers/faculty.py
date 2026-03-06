@@ -27,12 +27,18 @@ router = APIRouter(
     response_model=FacultyStats,
     summary="Faculty dashboard – key stats cards",
 )
-def get_stats() -> FacultyStats:
+def get_stats(
+    current_user: dict = Depends(require_faculty),
+    department: str | None = None,
+    year: str | None = None,
+    section: str | None = None,
+    subject: str | None = None,
+) -> FacultyStats:
     """
     Returns aggregated KPIs shown on the faculty dashboard:
     total students, average performance, document count, and pass rate.
     """
-    return faculty_service.get_stats()
+    return faculty_service.get_stats(current_user["id"], department, year, section, subject)
 
 
 # ── Document management ───────────────────────────────────────────────────────
@@ -42,9 +48,9 @@ def get_stats() -> FacultyStats:
     response_model=UploadedFileList,
     summary="List all uploaded documents",
 )
-def list_uploads() -> UploadedFileList:
+def list_uploads(current_user: dict = Depends(require_faculty)) -> UploadedFileList:
     """Return all uploaded documents stored on the server."""
-    return {"files": faculty_service.get_files()}
+    return {"files": faculty_service.get_files(current_user["id"])}
 
 
 @router.post(
@@ -54,6 +60,7 @@ def list_uploads() -> UploadedFileList:
     summary="Upload a new document",
 )
 def upload_file(
+    current_user: dict = Depends(require_faculty),
     file: UploadFile = File(..., description="CSV or XLSX file to upload"),
     subject: str = Form("General", description="Subject the file belongs to"),
     department: str = Form("", description="Department (e.g. CSM)"),
@@ -65,16 +72,23 @@ def upload_file(
     Supported formats: **.csv**, **.xlsx**  
     Max recommended size: **10 MB**
     """
-    return faculty_service.add_file(file, subject, department, year, section)
+    return faculty_service.add_file(
+        file,
+        subject,
+        department,
+        year,
+        section,
+        faculty_user_id=current_user["id"],
+    )
 
 
 @router.delete(
     "/uploads/{file_id}",
     summary="Delete an uploaded document",
 )
-def delete_upload(file_id: str) -> dict:
+def delete_upload(file_id: str, current_user: dict = Depends(require_faculty)) -> dict:
     """Permanently remove a document from the store by its ID."""
-    return faculty_service.delete_file(file_id)
+    return faculty_service.delete_file(file_id, current_user["id"])
 
 
 @router.get(
@@ -82,7 +96,7 @@ def delete_upload(file_id: str) -> dict:
     response_model=FileAnalysis,
     summary="Parse and analyse a specific uploaded document",
 )
-def analyze_upload(file_id: str) -> FileAnalysis:
+def analyze_upload(file_id: str, current_user: dict = Depends(require_faculty)) -> FileAnalysis:
     """
     Reads the stored raw bytes for an uploaded CSV file, auto-detects numeric
     columns, and returns per-column descriptive statistics together with a
@@ -90,7 +104,7 @@ def analyze_upload(file_id: str) -> FileAnalysis:
 
     Pre-seeded demo files (IDs `1`–4`) return representative seeded data.
     """
-    return faculty_service.analyze_file(file_id)
+    return faculty_service.analyze_file(file_id, current_user["id"])
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
@@ -101,6 +115,7 @@ def analyze_upload(file_id: str) -> FileAnalysis:
     summary="Chart data for the Analytics tab",
 )
 def get_analytics(
+    current_user: dict = Depends(require_faculty),
     department: str | None = None,
     year: str | None = None,
     section: str | None = None,
@@ -110,7 +125,7 @@ def get_analytics(
     Returns student marks (bar), performance trend (line), and grade
     distribution (pie) data.  All query params are optional filters.
     """
-    return faculty_service.get_analytics(department, year, section, subject)
+    return faculty_service.get_analytics(current_user["id"], department, year, section, subject)
 
 
 # ── Average report ────────────────────────────────────────────────────────────
@@ -120,12 +135,12 @@ def get_analytics(
     response_model=AverageReport,
     summary="Generate an average performance report",
 )
-def generate_average(body: AverageReportRequest) -> AverageReport:
+def generate_average(body: AverageReportRequest, current_user: dict = Depends(require_faculty)) -> AverageReport:
     """
     Compute an aggregated performance report across **2 or more** selected
     documents.  Provide their IDs in the request body.
     """
-    return faculty_service.generate_average_report(body.file_ids)
+    return faculty_service.generate_average_report(body.file_ids, current_user["id"])
 
 
 # ── Filter options ────────────────────────────────────────────────────────────

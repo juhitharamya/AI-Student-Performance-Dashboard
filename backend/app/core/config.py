@@ -14,8 +14,10 @@ def _default_database_url() -> str:
 class Settings(BaseSettings):
     """Application settings loaded from environment variables / .env file."""
 
+    _backend_dir = Path(__file__).resolve().parents[2]
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_backend_dir / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )

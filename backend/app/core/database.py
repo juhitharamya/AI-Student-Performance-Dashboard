@@ -127,5 +127,14 @@ def _sqlite_migrate() -> None:
         cols = [r[1] for r in conn.execute(text("PRAGMA table_info(uploaded_files)")).fetchall()]
         if "created_at" not in cols:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN created_at DATETIME"))
+        if "uploaded_by_user_id" not in cols:
+            conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN uploaded_by_user_id TEXT"))
         # Backfill for pre-existing rows so ordering works.
         conn.execute(text("UPDATE uploaded_files SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+        # Backfill legacy uploads to demo faculty if present (keeps dev UX sane).
+        conn.execute(
+            text(
+                "UPDATE uploaded_files SET uploaded_by_user_id = 'u1' "
+                "WHERE uploaded_by_user_id IS NULL"
+            )
+        )

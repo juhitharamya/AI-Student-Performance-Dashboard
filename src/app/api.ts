@@ -131,8 +131,25 @@ function authHeaders(): HeadersInit {
 
 async function handleResponse<T>(res: Response): Promise<T> {
     if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail ?? `HTTP ${res.status}`);
+        let detail: string = res.statusText || `HTTP ${res.status}`;
+        try {
+            const err = await res.json();
+            if (err && typeof err === "object" && "detail" in err) {
+                const d = (err as { detail?: unknown }).detail;
+                if (typeof d === "string") detail = d;
+                else detail = JSON.stringify(d);
+            } else {
+                detail = JSON.stringify(err);
+            }
+        } catch {
+            try {
+                const text = await res.text();
+                if (text) detail = text;
+            } catch {
+                // ignore
+            }
+        }
+        throw new Error(`HTTP ${res.status}: ${detail}`);
     }
     return res.json() as Promise<T>;
 }
@@ -170,8 +187,20 @@ export async function logout(): Promise<void> {
 
 // ── Faculty ───────────────────────────────────────────────────────────────────
 
-export async function getFacultyStats(): Promise<FacultyStats> {
-    const res = await fetch(`${BASE}/faculty/stats`, { headers: authHeaders() });
+export async function getFacultyStats(filters?: {
+    department?: string;
+    year?: string;
+    section?: string;
+    subject?: string;
+}): Promise<FacultyStats> {
+    const params = new URLSearchParams();
+    if (filters?.department) params.set("department", filters.department);
+    if (filters?.year) params.set("year", filters.year);
+    if (filters?.section) params.set("section", filters.section);
+    if (filters?.subject) params.set("subject", filters.subject);
+    const qs = params.toString();
+    const url = qs ? `${BASE}/faculty/stats?${qs}` : `${BASE}/faculty/stats`;
+    const res = await fetch(url, { headers: authHeaders() });
     return handleResponse<FacultyStats>(res);
 }
 

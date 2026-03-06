@@ -16,6 +16,13 @@ _SUBJECT_COLORS = [
 ]
 
 
+def _normalize_roll_no_str(s: str) -> str:
+    value = (s or "").strip()
+    if value.endswith(".0") and value[:-2].isdigit():
+        return value[:-2]
+    return value
+
+
 def _get_user(user_id: str) -> dict | None:
     with _db.SessionLocal() as db:
         u = db.query(User).filter(User.id == user_id, User.role == "student").first()
@@ -36,7 +43,8 @@ def _parse_marks_for_user(user: dict) -> list[dict]:
       - Else fallback to case-insensitive name contains match
     """
     student_name = (user.get("name") or "").strip().lower()
-    student_roll = (user.get("roll_no") or "").strip().lower()
+    student_roll_raw = (user.get("roll_no") or "").strip()
+    student_roll = _normalize_roll_no_str(student_roll_raw).lower()
 
     with _db.SessionLocal() as db:
         q = (
@@ -44,7 +52,11 @@ def _parse_marks_for_user(user: dict) -> list[dict]:
             .join(UploadedFile, UploadedFile.id == StudentMark.uploaded_file_id)
         )
         if student_roll:
-            q = q.filter(func.lower(StudentMark.roll_no) == student_roll)
+            candidates = {student_roll}
+            # Handle legacy rows that may have come from Excel numeric cells (e.g. "2301.0").
+            if student_roll.isdigit():
+                candidates.add(f"{student_roll}.0")
+            q = q.filter(func.lower(StudentMark.roll_no).in_(sorted(candidates)))
         elif student_name:
             q = q.filter(func.lower(StudentMark.student_name).like(f"%{student_name}%"))
         else:
@@ -111,7 +123,8 @@ def _class_avg_by_file(file_ids: list[str]) -> dict[str, float]:
     buckets: dict[str, list[float]] = {}
     for fid, marks in rows:
         buckets.setdefault(fid, []).append(float(marks))
-    return {fid: round(statistics.mean(vals), 1) if vals else 0.0 for fid, vals in buckets.items()}
+    # UI schema expects integers for class averages.
+    return {fid: int(round(statistics.mean(vals))) if vals else 0 for fid, vals in buckets.items()}
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -127,7 +140,32 @@ def get_student_profile(user_id: str) -> dict:
         }
 
     marks_data = _parse_marks_for_user(user)
+
+    # Prefer real student name + class metadata from uploaded records when the
+    # user's profile is still the auto-generated defaults.
+    profile_name = user.get("name") or "Student"
+    profile_roll = user.get("roll_no") or "N/A"
+    profile_year = user.get("year") or "1st Year"
+    profile_section = user.get("section") or "Section A"
+    profile_department = user.get("department") or "General"
+
     if marks_data:
+        roll_norm = _normalize_roll_no_str(profile_roll).lower()
+        if roll_norm and (profile_name or "").strip().lower() == roll_norm:
+            profile_name = marks_data[0].get("name") or profile_name
+
+        latest_file_id = marks_data[0].get("file_id")
+        if latest_file_id:
+            with _db.SessionLocal() as db:
+                uf = db.query(UploadedFile).filter(UploadedFile.id == latest_file_id).first()
+                if uf:
+                    if profile_department in {"", "General", "N/A"} and (uf.department or "").strip():
+                        profile_department = uf.department
+                    if profile_year in {"", "1st Year", "N/A"} and (uf.year or "").strip():
+                        profile_year = uf.year
+                    if profile_section in {"", "Section A", "A", "N/A"} and (uf.section or "").strip():
+                        profile_section = uf.section
+
         avg = round(statistics.mean(m["marks"] for m in marks_data), 1)
         overall = avg
         rank = sum(1 for s in _collect_all_scores(marks_data) if s > avg) + 1
@@ -136,13 +174,13 @@ def get_student_profile(user_id: str) -> dict:
         rank = 0
 
     return {
-        "name":             user["name"],
-        "roll_no":          user.get("roll_no", "N/A"),
+        "name":             profile_name,
+        "roll_no":          profile_roll,
         "cgpa":             user.get("cgpa", 0.0),
-        "year":             user.get("year", "1st Year"),
-        "section":          user.get("section", "A"),
-        "department":       user.get("department", "General"),
-        "avatar_initials":  _make_initials(user["name"]),
+        "year":             profile_year,
+        "section":          profile_section,
+        "department":       profile_department,
+        "avatar_initials":  _make_initials(profile_name),
         "overall_score":    overall,
         "class_rank":       rank,
         "attendance":       user.get("attendance", "—"),
@@ -174,7 +212,11 @@ def get_performance_trend(user_id: str = "") -> list[dict]:
     file_ids = [m["file_id"] for m in marks_data]
     class_avg = _class_avg_by_file(file_ids)
     return [
-        {"month": m["subject"][:8], "score": round(m["marks"]), "classAvg": class_avg.get(m["file_id"], 0)}
+        {
+            "month": m["subject"][:8],
+            "score": int(round(m["marks"])),
+            "classAvg": int(class_avg.get(m["file_id"], 0) or 0),
+        }
         for m in marks_data
     ]
 
@@ -187,7 +229,11 @@ def get_class_comparison(user_id: str = "") -> list[dict]:
     file_ids = [m["file_id"] for m in marks_data]
     class_avg = _class_avg_by_file(file_ids)
     return [
-        {"subject": m["subject"][:8], "you": round(m["marks"]), "classAvg": class_avg.get(m["file_id"], 0)}
+        {
+            "subject": m["subject"][:8],
+            "you": int(round(m["marks"])),
+            "classAvg": int(class_avg.get(m["file_id"], 0) or 0),
+        }
         for m in marks_data
     ]
 
@@ -231,7 +277,7 @@ def get_semester_summary(user_id: str = "") -> dict:
         "assignments_completed":   f"{len(marks_data)}/{len(marks_data)}",
         "quizzes_passed":          f"{sum(1 for m in marks_data if m['marks'] >= 40)}/{len(marks_data)}",
         "attendance":              user.get("attendance", "—"),
-        "overall_score":           round(avg, 1),
+        "overall_score":           str(round(avg, 1)),
         "class_rank":              0,
     }
 

@@ -10,6 +10,11 @@ from fastapi.testclient import TestClient
 
 BASE = "/api/v1"
 
+# Force tests to use SQLite even if the developer has DATABASE_URL set to Postgres/Supabase.
+# This keeps local test runs zero-setup and avoids importing Postgres drivers during collection.
+_test_db_path_for_env = Path(__file__).parent.parent / "test.db"
+os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path_for_env}"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _use_test_db():

@@ -52,6 +52,20 @@ export function FacultyDashboard() {
   // ── Profile from localStorage ──────────────────────────────────────────────
   const profile = JSON.parse(localStorage.getItem(api.PROFILE_KEY) ?? "{}") as api.AuthProfile;
 
+  // Route guard: redirect to login when token is missing/invalid or role is wrong.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await api.getMe();
+        if (me.role !== "faculty") throw new Error("Wrong role");
+      } catch {
+        localStorage.removeItem(api.TOKEN_KEY);
+        localStorage.removeItem(api.PROFILE_KEY);
+        navigate("/");
+      }
+    })();
+  }, [navigate]);
+
   // ── Dashboard tab state ────────────────────────────────────────────────────
   const [stats, setStats] = useState<FacultyStats | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -62,6 +76,9 @@ export function FacultyDashboard() {
   const [dashSection, setDashSection] = useState("");
   const [dashSubject, setDashSubject] = useState("");
   const [dashFilterApplied, setDashFilterApplied] = useState<Record<string, string>>({});
+  const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
+  const [recentUploadsLoading, setRecentUploadsLoading] = useState(false);
+  const [recentUploadsError, setRecentUploadsError] = useState("");
 
   // ── Upload tab state ───────────────────────────────────────────────────────
   const [files, setFiles] = useState<SelectableFile[]>([]);
@@ -116,13 +133,29 @@ export function FacultyDashboard() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== "dashboard") return;
+    (async () => {
+      setRecentUploadsLoading(true);
+      setRecentUploadsError("");
+      try {
+        const list = await api.getUploads();
+        setRecentUploads(list);
+      } catch (e: unknown) {
+        setRecentUploadsError(e instanceof Error ? e.message : "Failed to load recent uploads");
+      } finally {
+        setRecentUploadsLoading(false);
+      }
+    })();
+  }, [activeTab]);
+
   // ── Dashboard View button ────────────────────────────────────────────
   const handleDashView = useCallback(async () => {
     setDashLoading(true);
     setDashError("");
     try {
       const filters = { department: dashDept || undefined, year: dashYear || undefined, section: dashSection || undefined, subject: dashSubject || undefined };
-      const [s, a] = await Promise.all([api.getFacultyStats(), api.getAnalytics(filters)]);
+      const [s, a] = await Promise.all([api.getFacultyStats(filters), api.getAnalytics(filters)]);
       setStats(s);
       setAnalytics(a);
       const applied: Record<string, string> = {};
@@ -188,6 +221,7 @@ export function FacultyDashboard() {
         section: section || "",
       });
       setFiles((prev) => [{ ...newFile, selected: false }, ...prev]);
+      setRecentUploads((prev) => [newFile, ...prev]);
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -233,6 +267,7 @@ export function FacultyDashboard() {
     try {
       await api.deleteUpload(id);
       setFiles((prev) => prev.filter((f) => f.id !== id));
+      setRecentUploads((prev) => prev.filter((f) => f.id !== id));
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : "Delete failed");
     }
@@ -481,7 +516,13 @@ export function FacultyDashboard() {
                         <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                           <h3 className="text-foreground mb-4">Recent Uploads</h3>
                           <div className="space-y-3">
-                            {files.slice(0, 4).map((file) => (
+                            {recentUploadsLoading ? (
+                              <div className="text-center py-10 text-gray-400 text-sm">Loading uploadsâ€¦</div>
+                            ) : recentUploadsError ? (
+                              <div className="text-center py-10 text-red-600 text-sm">{recentUploadsError}</div>
+                            ) : recentUploads.length === 0 ? (
+                              <div className="text-center py-10 text-gray-400 text-sm">No uploads yet</div>
+                            ) : recentUploads.slice(0, 4).map((file) => (
                               <div key={file.id} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-indigo-50 transition-colors">
                                 <div className="flex items-center gap-3">
                                   <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">

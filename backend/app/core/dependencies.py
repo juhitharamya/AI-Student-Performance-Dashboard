@@ -3,17 +3,17 @@ FastAPI dependency helpers — reusable across all routers.
 """
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import decode_access_token
 
 # ── Bearer-token extractor ────────────────────────────────────────────────────
 
-_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=True)
+_bearer = HTTPBearer(auto_error=True)
 
 
 def get_current_user(
-    token: str = Depends(_oauth2),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
 ) -> dict:
     """
     Validate the JWT from the Authorization header and return the user dict.
@@ -21,7 +21,7 @@ def get_current_user(
     Raises 401 if the token is missing, expired, or invalid.
     Raises 404 if the user encoded in the token no longer exists in the DB.
     """
-    payload = decode_access_token(token)
+    payload = decode_access_token(credentials.credentials)
 
     if payload is None:
         raise HTTPException(
