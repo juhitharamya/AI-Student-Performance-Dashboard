@@ -75,6 +75,7 @@ export function FacultyDashboard() {
   const [dashYear, setDashYear] = useState("");
   const [dashSection, setDashSection] = useState("");
   const [dashSubject, setDashSubject] = useState("");
+  const [dashTestType, setDashTestType] = useState("");
   const [dashFilterApplied, setDashFilterApplied] = useState<Record<string, string>>({});
   const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
   const [recentUploadsLoading, setRecentUploadsLoading] = useState(false);
@@ -105,8 +106,9 @@ export function FacultyDashboard() {
   const [year, setYear] = useState("");
   const [section, setSection] = useState("");
   const [subject, setSubject] = useState("");
+  const [testType, setTestType] = useState("");
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    departments: [], years: [], sections: [], subjects: [],
+    departments: [], years: [], sections: [], subjects: [], test_types: [],
   });
   const [analyticsTab, setAnalyticsTab] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -116,6 +118,9 @@ export function FacultyDashboard() {
   const [studentList, setStudentList] = useState<StudentListItem[]>([]);
   const [studentListLoading, setStudentListLoading] = useState(false);
   const [studentListError, setStudentListError] = useState("");
+  const [studentDept, setStudentDept] = useState("");
+  const [studentYear, setStudentYear] = useState("");
+  const [studentSection, setStudentSection] = useState("");
 
   const selectedFiles = files.filter((f) => f.selected);
   const totalCandidates = editColumns.filter((c) => /total|marks|overall|grand/i.test(c.trim().toLowerCase()));
@@ -137,14 +142,19 @@ export function FacultyDashboard() {
     setStudentListLoading(true);
     setStudentListError("");
     try {
-      const rows = await api.getStudentList(fileIds);
+      const rows = await api.getStudentList({
+        fileIds,
+        department: studentDept || undefined,
+        year: studentYear || undefined,
+        section: studentSection || undefined,
+      });
       setStudentList(rows);
     } catch (e: unknown) {
       setStudentListError(e instanceof Error ? e.message : "Failed to load student list");
     } finally {
       setStudentListLoading(false);
     }
-  }, []);
+  }, [studentDept, studentYear, studentSection]);
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -189,7 +199,13 @@ export function FacultyDashboard() {
     setDashLoading(true);
     setDashError("");
     try {
-      const filters = { department: dashDept || undefined, year: dashYear || undefined, section: dashSection || undefined, subject: dashSubject || undefined };
+      const filters = {
+        department: dashDept || undefined,
+        year: dashYear || undefined,
+        section: dashSection || undefined,
+        subject: dashSubject || undefined,
+        test_type: dashTestType || undefined,
+      };
       const [s, a] = await Promise.all([api.getFacultyStats(filters), api.getAnalytics(filters)]);
       setStats(s);
       setAnalytics(a);
@@ -198,13 +214,14 @@ export function FacultyDashboard() {
       if (dashYear) applied["Year"] = dashYear;
       if (dashSection) applied["Section"] = dashSection;
       if (dashSubject) applied["Subject"] = dashSubject;
+      if (dashTestType) applied["Test"] = dashTestType;
       setDashFilterApplied(applied);
     } catch (e: unknown) {
       setDashError(e instanceof Error ? e.message : "Failed to load dashboard");
     } finally {
       setDashLoading(false);
     }
-  }, [dashDept, dashYear, dashSection, dashSubject]);
+  }, [dashDept, dashYear, dashSection, dashSubject, dashTestType]);
 
   // ── Load uploads when upload tab is opened ─────────────────────────────────
   useEffect(() => {
@@ -225,10 +242,15 @@ export function FacultyDashboard() {
   // ── Load filter options once ────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== "students") return;
-    loadStudentList(selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined);
+    const ids = selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined;
+    if (!ids && !studentDept && !studentYear && !studentSection) {
+      setStudentList([]);
+      return;
+    }
+    loadStudentList(ids);
     // We intentionally only fetch on tab open; use the Refresh button after changing selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, loadStudentList]);
+  }, [activeTab, loadStudentList, selectedFiles.length, studentDept, studentYear, studentSection]);
 
   useEffect(() => {
     api.getFilterOptions().then(setFilterOptions).catch(() => { });
@@ -241,7 +263,7 @@ export function FacultyDashboard() {
       setAnalyticsLoading(true);
       setAnalyticsError("");
       try {
-        const a = await api.getAnalytics({ department, year, section, subject });
+        const a = await api.getAnalytics({ department, year, section, subject, test_type: testType || undefined });
         setAnalyticsTab(a);
       } catch (e: unknown) {
         setAnalyticsError(e instanceof Error ? e.message : "Failed to load analytics");
@@ -249,7 +271,7 @@ export function FacultyDashboard() {
         setAnalyticsLoading(false);
       }
     })();
-  }, [activeTab, department, year, section, subject]);
+  }, [activeTab, department, year, section, subject, testType]);
 
   // ── File helpers ───────────────────────────────────────────────────────────
   const handleUploadFile = useCallback(async (file: File) => {
@@ -410,7 +432,10 @@ export function FacultyDashboard() {
   };
 
   // ── Reusable sub-components ────────────────────────────────────────────────
-  const SelectDropdown = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) => (
+  const SelectDropdown = (
+    { label, value, onChange, options, includeAll = true }:
+    { label: string; value: string; onChange: (v: string) => void; options: string[]; includeAll?: boolean }
+  ) => (
     <div>
       <label className="text-sm text-gray-500 mb-1.5 block">{label}</label>
       <div className="relative">
@@ -419,7 +444,11 @@ export function FacultyDashboard() {
           onChange={(e) => onChange(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white appearance-none cursor-pointer text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
         >
-          <option value="">All {label}s</option>
+          {includeAll ? (
+            <option value="">All {label}s</option>
+          ) : (
+            <option value="">Select {label}</option>
+          )}
           {options.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
@@ -539,11 +568,12 @@ export function FacultyDashboard() {
                   {/* Filter Bar */}
                   <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                     <p className="text-sm text-gray-500 mb-3">Filter Dashboard</p>
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                       <SelectDropdown label="Department" value={dashDept} onChange={setDashDept} options={filterOptions.departments} />
                       <SelectDropdown label="Year" value={dashYear} onChange={setDashYear} options={filterOptions.years} />
                       <SelectDropdown label="Section" value={dashSection} onChange={setDashSection} options={filterOptions.sections} />
                       <SelectDropdown label="Subject" value={dashSubject} onChange={setDashSubject} options={filterOptions.subjects} />
+                      <SelectDropdown label="Test" value={dashTestType} onChange={setDashTestType} options={filterOptions.test_types} />
                       <div className="flex items-end">
                         <button
                           onClick={handleDashView}
@@ -679,11 +709,12 @@ export function FacultyDashboard() {
               {/* Filters */}
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h3 className="text-foreground mb-4">Select Parameters</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <SelectDropdown label="Department" value={department} onChange={setDepartment} options={filterOptions.departments} />
                   <SelectDropdown label="Year" value={year} onChange={setYear} options={filterOptions.years} />
                   <SelectDropdown label="Section" value={section} onChange={setSection} options={filterOptions.sections} />
                   <SelectDropdown label="Subject" value={subject} onChange={setSubject} options={filterOptions.subjects} />
+                  <SelectDropdown label="Test" value={testType} onChange={setTestType} options={filterOptions.test_types} />
                 </div>
               </div>
 
@@ -783,11 +814,12 @@ export function FacultyDashboard() {
               <div className="space-y-6">
                 <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                   <h3 className="text-foreground mb-4">Select Parameters</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <SelectDropdown label="Department" value={department} onChange={setDepartment} options={filterOptions.departments} />
                     <SelectDropdown label="Year" value={year} onChange={setYear} options={filterOptions.years} />
                     <SelectDropdown label="Section" value={section} onChange={setSection} options={filterOptions.sections} />
                     <SelectDropdown label="Subject" value={subject} onChange={setSubject} options={filterOptions.subjects} />
+                    <SelectDropdown label="Test" value={testType} onChange={setTestType} options={filterOptions.test_types} />
                   </div>
                 </div>
 
@@ -998,7 +1030,10 @@ export function FacultyDashboard() {
                     </div>
                     <button
                       onClick={() => loadStudentList(selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined)}
-                      disabled={studentListLoading}
+                      disabled={
+                        studentListLoading ||
+                        (selectedFiles.length === 0 && !studentDept && !studentYear && !studentSection)
+                      }
                       className="px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                     >
                       {studentListLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Refreshing…</> : "Refresh"}
@@ -1007,6 +1042,11 @@ export function FacultyDashboard() {
                   <p className="text-xs text-muted-foreground mt-4">
                     Tip: Select one or more files in <span className="text-foreground">Student Marks</span> to filter this list.
                   </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                    <SelectDropdown label="Department" value={studentDept} onChange={setStudentDept} options={filterOptions.departments} includeAll={false} />
+                    <SelectDropdown label="Year" value={studentYear} onChange={setStudentYear} options={filterOptions.years} includeAll={false} />
+                    <SelectDropdown label="Section" value={studentSection} onChange={setStudentSection} options={filterOptions.sections} includeAll={false} />
+                  </div>
                 </div>
 
                 {studentListError && <ErrorBanner message={studentListError} onDismiss={() => setStudentListError("")} />}

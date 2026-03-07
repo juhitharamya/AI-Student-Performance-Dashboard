@@ -37,12 +37,13 @@ def get_stats(
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
+    test_type: str | None = None,
 ) -> FacultyStats:
     """
     Returns aggregated KPIs shown on the faculty dashboard:
     total students, average performance, document count, and pass rate.
     """
-    return faculty_service.get_stats(current_user["id"], department, year, section, subject)
+    return faculty_service.get_stats(current_user["id"], department, year, section, subject, test_type)
 
 
 # ── Document management ───────────────────────────────────────────────────────
@@ -159,12 +160,13 @@ def get_analytics(
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
+    test_type: str | None = None,
 ) -> AnalyticsData:
     """
     Returns student marks (bar), performance trend (line), and grade
     distribution (pie) data.  All query params are optional filters.
     """
-    return faculty_service.get_analytics(current_user["id"], department, year, section, subject)
+    return faculty_service.get_analytics(current_user["id"], department, year, section, subject, test_type)
 
 
 # ── Average report ────────────────────────────────────────────────────────────
@@ -202,5 +204,16 @@ def get_filter_options() -> FilterOptions:
 def list_students(
     current_user: dict = Depends(require_faculty),
     file_ids: list[str] | None = Query(None, description="Optional uploaded file IDs to scope the list"),
+    department: str | None = None,
+    year: str | None = None,
+    section: str | None = None,
+    test_type: str | None = None,
 ) -> list[StudentListItem]:
-    return faculty_service.get_student_list(current_user["id"], file_ids)
+    return faculty_service.get_student_list(
+        current_user["id"],
+        file_ids=file_ids,
+        department=department,
+        year=year,
+        section=section,
+        test_type=test_type,
+    )

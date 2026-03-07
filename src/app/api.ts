@@ -32,6 +32,7 @@ export interface UploadedFile {
     name: string;
     date: string;
     subject: string;
+    test_type: string;
     department: string;
     year: string;
     section: string;
@@ -101,6 +102,7 @@ export interface FilterOptions {
     years: string[];
     sections: string[];
     subjects: string[];
+    test_types: string[];
 }
 
 export interface StudentDashboard {
@@ -213,12 +215,14 @@ export async function getFacultyStats(filters?: {
     year?: string;
     section?: string;
     subject?: string;
+    test_type?: string;
 }): Promise<FacultyStats> {
     const params = new URLSearchParams();
     if (filters?.department) params.set("department", filters.department);
     if (filters?.year) params.set("year", filters.year);
     if (filters?.section) params.set("section", filters.section);
     if (filters?.subject) params.set("subject", filters.subject);
+    if (filters?.test_type) params.set("test_type", filters.test_type);
     const qs = params.toString();
     const url = qs ? `${BASE}/faculty/stats?${qs}` : `${BASE}/faculty/stats`;
     const res = await fetch(url, { headers: authHeaders() });
@@ -291,10 +295,20 @@ export async function downloadUploadMarksCsv(fileId: string): Promise<Blob> {
     return res.blob();
 }
 
-export async function getStudentList(fileIds?: string[]): Promise<StudentListItem[]> {
-    const params = new URLSearchParams();
-    for (const id of fileIds ?? []) params.append("file_ids", id);
-    const qs = params.toString();
+export async function getStudentList(params?: {
+    fileIds?: string[];
+    department?: string;
+    year?: string;
+    section?: string;
+    test_type?: string;
+}): Promise<StudentListItem[]> {
+    const qsParams = new URLSearchParams();
+    for (const id of params?.fileIds ?? []) qsParams.append("file_ids", id);
+    if (params?.department) qsParams.set("department", params.department);
+    if (params?.year) qsParams.set("year", params.year);
+    if (params?.section) qsParams.set("section", params.section);
+    if (params?.test_type) qsParams.set("test_type", params.test_type);
+    const qs = qsParams.toString();
     const url = qs ? `${BASE}/faculty/students?${qs}` : `${BASE}/faculty/students`;
     const res = await fetch(url, { headers: authHeaders() });
     return handleResponse<StudentListItem[]>(res);
@@ -305,12 +319,14 @@ export async function getAnalytics(filters?: {
     year?: string;
     section?: string;
     subject?: string;
+    test_type?: string;
 }): Promise<AnalyticsData> {
     const params = new URLSearchParams();
     if (filters?.department) params.set("department", filters.department);
     if (filters?.year) params.set("year", filters.year);
     if (filters?.section) params.set("section", filters.section);
     if (filters?.subject) params.set("subject", filters.subject);
+    if (filters?.test_type) params.set("test_type", filters.test_type);
     const res = await fetch(`${BASE}/faculty/analytics?${params}`, {
         headers: authHeaders(),
     });

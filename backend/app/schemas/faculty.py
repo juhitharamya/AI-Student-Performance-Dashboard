@@ -21,6 +21,7 @@ class UploadedFile(BaseModel):
     name: str
     date: str
     subject: str
+    test_type: str = ""
     department: str = ""
     year: str = ""
     section: str = ""
@@ -151,6 +152,7 @@ class FilterOptions(BaseModel):
     years: list[str]
     sections: list[str]
     subjects: list[str]
+    test_types: list[str]
 
 
 # ── File analysis ─────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ class UploadedFile(Base):
     name       = Column(String, nullable=False)        # original filename
     date       = Column(String, nullable=False)        # human-readable upload date
     subject    = Column(String, nullable=False)
+    test_type  = Column(String, nullable=True, default="")  # e.g. MID-1, MID-2, Slip Test
     department = Column(String, nullable=True, default="")
     year       = Column(String, nullable=True, default="")
     section    = Column(String, nullable=True, default="")
@@ -36,6 +37,7 @@ class UploadedFile(Base):
             "name":       self.name,
             "date":       self.date,
             "subject":    self.subject,
+            "test_type":  self.test_type or "",
             "department": self.department or "",
             "year":       self.year or "",
             "section":    self.section or "",

@@ -14,3 +14,16 @@ SUBJECTS    = [
     "Cyber Security", "Artificial Intelligence", "Web Technologies",
     "STM", "FIOT", "KRR", "JAVA", "DM",
 ]
+
+# Test/assessment types (inferred from filename where possible)
+TEST_TYPES  = [
+    "MID-1",
+    "MID-2",
+    "Slip Test",
+    "Unit Test",
+    "Quiz",
+    "Assignment",
+    "Lab",
+    "Project",
+    "Other",
+]

@@ -151,6 +151,36 @@ def _dedupe_total_like_columns(columns: list[str]) -> list[str]:
         out.append(c)
     return out
 
+def _infer_test_type_from_names(filename: str, sheet_names: list[str] | None = None) -> str:
+    """
+    Infer assessment/test type from a filename and optional XLSX sheet names.
+
+    Examples:
+    - "FIOT_mid-1.xlsx" -> "MID-1"
+    - "DS MID 2 marks.xlsx" -> "MID-2"
+    - "SlipTest.xlsx" -> "Slip Test"
+    """
+    parts = [filename or ""]
+    if sheet_names:
+        parts.extend(sheet_names)
+    text = " ".join(p for p in parts if p).lower()
+    text = re.sub(r"[_\-]+", " ", text)
+
+    patterns: list[tuple[str, str]] = [
+        (r"\b(mid|midterm)\s*1\b|\bmid\s*-\s*1\b|\bmid1\b", "MID-1"),
+        (r"\b(mid|midterm)\s*2\b|\bmid\s*-\s*2\b|\bmid2\b", "MID-2"),
+        (r"\bslip\s*test\b|\bsliptest\b|\bslip\b", "Slip Test"),
+        (r"\bunit\s*test\b|\but\s*\d+\b|\bunit\s*\d+\b", "Unit Test"),
+        (r"\bquiz\b|\bquizzes\b", "Quiz"),
+        (r"\bassign(ment)?\b|\bassignment\b", "Assignment"),
+        (r"\blab\b|\bpractical\b", "Lab"),
+        (r"\bproject\b|\bmini\s*project\b", "Project"),
+    ]
+    for pat, label in patterns:
+        if re.search(pat, text):
+            return label
+    return "Other"
+
 def _is_numeric_col(col: str, rows: list[dict]) -> bool:
     vals = [rows[i].get(col) for i in range(min(20, len(rows)))]
     numeric = total = 0
@@ -516,6 +546,7 @@ def _filter_files(
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
+    test_type: str | None = None,
 ) -> list[dict]:
     files = _all_files(faculty_user_id)
     result = []
@@ -524,6 +555,7 @@ def _filter_files(
         if year is not None and year != "" and (f.get("year") or "") != year: continue
         if section is not None and section != "" and (f.get("section") or "") != section: continue
         if subject is not None and subject != "" and (f.get("subject") or "") != subject: continue
+        if test_type is not None and test_type != "" and (f.get("test_type") or "") != test_type: continue
         result.append(f)
     return result
 
@@ -599,8 +631,9 @@ def get_stats(
     year: str | None = None,
     section: str | None = None,
     subject: str | None = None,
+    test_type: str | None = None,
 ) -> dict:
-    files = _filter_files(faculty_user_id, department, year, section, subject)
+    files = _filter_files(faculty_user_id, department, year, section, subject, test_type)
     all_marks = _marks_from_file_ids([f["id"] for f in files])
     total_docs = len(_all_files(faculty_user_id))
 
@@ -668,6 +701,17 @@ def add_file(
     # Write bytes to disk
     Path(file_path).write_bytes(content)
 
+    # Infer assessment/test type from filename/sheetname for filtering (MID-1/MID-2/Slip Test/etc.).
+    sheet_names: list[str] = []
+    if ext in {"xlsx", "xls"}:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            sheet_names = list(wb.sheetnames or [])
+        except Exception:
+            sheet_names = []
+    test_type = _infer_test_type_from_names(fname, sheet_names)
+
     # Insert metadata + parsed marks into DB (single commit)
     with _db.SessionLocal() as session:
         try:
@@ -677,6 +721,7 @@ def add_file(
                 name=fname,
                 date=datetime.now().strftime("%b %d, %Y"),
                 subject=(subject or "General").strip() or "General",
+                test_type=test_type,
                 department=(department or "").strip(),
                 year=(year or "").strip(),
                 section=(section or "").strip(),
@@ -857,19 +902,19 @@ def analyze_file(file_id: str, faculty_user_id: str) -> dict:
     }
 
 
-def get_analytics(faculty_user_id: str, department, year, section, subject) -> dict:
-    files = _filter_files(faculty_user_id, department, year, section, subject)
+def get_analytics(faculty_user_id: str, department, year, section, subject, test_type: str | None = None) -> dict:
+    files = _filter_files(faculty_user_id, department, year, section, subject, test_type)
     all_marks = _marks_from_file_ids([f["id"] for f in files])
     if not all_marks:
         return {
             "student_marks": [], "performance_trend": [], "grade_distribution": [],
             "section_breakdown": [], "student_detail_list": [],
-            "filters_applied": {"department": department, "year": year, "section": section, "subject": subject},
+            "filters_applied": {"department": department, "year": year, "section": section, "subject": subject, "test_type": test_type},
         }
     marks_vals = [m["marks"] for m in all_marks]
     avg = round(statistics.mean(marks_vals), 1)
     grade_dist = _grade_distribution(marks_vals)
-    section_breakdown = _compute_section_breakdown(faculty_user_id, department, year, subject)
+    section_breakdown = _compute_section_breakdown(faculty_user_id, department, year, subject, test_type)
     from app.services import ml_service
     ml_result = ml_service.predict(all_marks)
     return {
@@ -878,11 +923,11 @@ def get_analytics(faculty_user_id: str, department, year, section, subject) -> d
         "grade_distribution": grade_dist,
         "section_breakdown":  section_breakdown,
         "student_detail_list": ml_result["predictions"],
-        "filters_applied": {"department": department, "year": year, "section": section, "subject": subject},
+        "filters_applied": {"department": department, "year": year, "section": section, "subject": subject, "test_type": test_type},
     }
 
 
-def _compute_section_breakdown(faculty_user_id: str, department, year, subject) -> list[dict]:
+def _compute_section_breakdown(faculty_user_id: str, department, year, subject, test_type: str | None = None) -> list[dict]:
     section_map: dict[str, list[float]] = {}
     with _db.SessionLocal() as session:
         q = (
@@ -896,6 +941,8 @@ def _compute_section_breakdown(faculty_user_id: str, department, year, subject) 
             q = q.filter(UploadedFile.year == year)
         if subject:
             q = q.filter(UploadedFile.subject == subject)
+        if test_type:
+            q = q.filter(UploadedFile.test_type == test_type)
 
         for sec, marks in q.all():
             sec_label = sec or "Unknown"
@@ -935,10 +982,18 @@ def get_filter_options() -> dict:
         "years":       db.YEARS,
         "sections":    db.SECTIONS,
         "subjects":    db.SUBJECTS,
+        "test_types":  getattr(db, "TEST_TYPES", []),
     }
 
 
-def get_student_list(faculty_user_id: str, file_ids: list[str] | None = None) -> list[dict]:
+def get_student_list(
+    faculty_user_id: str,
+    file_ids: list[str] | None = None,
+    department: str | None = None,
+    year: str | None = None,
+    section: str | None = None,
+    test_type: str | None = None,
+) -> list[dict]:
     """
     Return a simple student list (name/roll/marks) for the faculty's uploaded files.
 
@@ -962,6 +1017,14 @@ def get_student_list(faculty_user_id: str, file_ids: list[str] | None = None) ->
         )
         if file_ids:
             q = q.filter(StudentMark.uploaded_file_id.in_(file_ids))
+        if department:
+            q = q.filter(UploadedFile.department == department)
+        if year:
+            q = q.filter(UploadedFile.year == year)
+        if section:
+            q = q.filter(UploadedFile.section == section)
+        if test_type:
+            q = q.filter(UploadedFile.test_type == test_type)
 
         rows = q.order_by(UploadedFile.created_at.desc()).all()
         return [
