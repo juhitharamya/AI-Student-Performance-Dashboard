@@ -75,6 +75,27 @@ export interface AverageReport {
     source_files: string[];
 }
 
+export interface StudentListItem {
+    file_id: string;
+    subject: string;
+    name: string;
+    roll_no: string;
+    marks: number;
+}
+
+export interface UploadedFileMarkRow {
+    id: string;
+    name: string;
+    roll_no: string;
+    total: number;
+    components: Record<string, number | null>;
+}
+
+export interface UploadedFileMarksResponse {
+    columns: string[];
+    rows: UploadedFileMarkRow[];
+}
+
 export interface FilterOptions {
     departments: string[];
     years: string[];
@@ -241,6 +262,42 @@ export async function analyzeUpload(fileId: string): Promise<FileAnalysis> {
         headers: authHeaders(),
     });
     return handleResponse<FileAnalysis>(res);
+}
+
+export async function getUploadMarks(fileId: string): Promise<UploadedFileMarksResponse> {
+    const res = await fetch(`${BASE}/faculty/uploads/${fileId}/marks`, {
+        headers: authHeaders(),
+    });
+    return handleResponse<UploadedFileMarksResponse>(res);
+}
+
+export async function updateUploadMarks(fileId: string, marks: UploadedFileMarkRow[]): Promise<UploadedFileMarksResponse> {
+    const res = await fetch(`${BASE}/faculty/uploads/${fileId}/marks`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ marks }),
+    });
+    return handleResponse<UploadedFileMarksResponse>(res);
+}
+
+export async function downloadUploadMarksCsv(fileId: string): Promise<Blob> {
+    const res = await fetch(`${BASE}/faculty/uploads/${fileId}/marks/export`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) {
+        // reuse existing error handler for consistent messages
+        await handleResponse<unknown>(res);
+    }
+    return res.blob();
+}
+
+export async function getStudentList(fileIds?: string[]): Promise<StudentListItem[]> {
+    const params = new URLSearchParams();
+    for (const id of fileIds ?? []) params.append("file_ids", id);
+    const qs = params.toString();
+    const url = qs ? `${BASE}/faculty/students?${qs}` : `${BASE}/faculty/students`;
+    const res = await fetch(url, { headers: authHeaders() });
+    return handleResponse<StudentListItem[]>(res);
 }
 
 export async function getAnalytics(filters?: {

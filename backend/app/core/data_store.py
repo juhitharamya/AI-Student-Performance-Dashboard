@@ -12,4 +12,5 @@ SUBJECTS    = [
     "DAA", "NLP", "Data Analytics", "Operating Systems", "DBMS",
     "Software Engineering", "Computer Organization", "Cloud Computing",
     "Cyber Security", "Artificial Intelligence", "Web Technologies",
+    "STM", "FIOT", "KRR", "JAVA", "DM",
 ]

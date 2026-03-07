@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
-  LayoutDashboard, Upload, BarChart3, Calculator, LogOut, Bell, ChevronDown,
-  FileText, Calendar, Trash2, Eye, CheckSquare, X, Menu, Brain, TrendingUp,
+  LayoutDashboard, Upload, BarChart3, LogOut, Bell, ChevronDown,
+  FileText, Calendar, Trash2, Eye, CheckSquare, X, Menu, Brain, TrendingUp, Pencil,
   Users, GraduationCap, Upload as UploadIcon, Loader2, AlertCircle, InboxIcon
 } from "lucide-react";
 import {
@@ -10,13 +10,13 @@ import {
   LineChart, Line, PieChart, Pie, Cell, Legend
 } from "recharts";
 import * as api from "../api";
-import type { UploadedFile, FacultyStats, AnalyticsData, AverageReport, FilterOptions, SectionPerf, FileAnalysis } from "../api";
+import type { UploadedFile, FacultyStats, AnalyticsData, FilterOptions, SectionPerf, FileAnalysis, StudentListItem, UploadedFileMarkRow } from "../api";
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "upload", label: "Upload Documents", icon: Upload },
+  { id: "upload", label: "Student Marks", icon: Upload },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
-  { id: "average", label: "Generate Average", icon: Calculator },
+  { id: "students", label: "Student List", icon: Users },
 ];
 
 interface SelectableFile extends UploadedFile {
@@ -89,6 +89,14 @@ export function FacultyDashboard() {
   const [fileAnalysis, setFileAnalysis] = useState<FileAnalysis | null>(null);
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
+  const [editingFile, setEditingFile] = useState<SelectableFile | null>(null);
+  const [editColumns, setEditColumns] = useState<string[]>([]);
+  const [editMarks, setEditMarks] = useState<
+    (Omit<UploadedFileMarkRow, "components"> & { components: Record<string, string> })[]
+  >([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,11 +113,38 @@ export function FacultyDashboard() {
   const [analyticsError, setAnalyticsError] = useState("");
 
   // ── Average tab state ──────────────────────────────────────────────────────
-  const [averageReport, setAverageReport] = useState<AverageReport | null>(null);
-  const [averageLoading, setAverageLoading] = useState(false);
-  const [averageError, setAverageError] = useState("");
+  const [studentList, setStudentList] = useState<StudentListItem[]>([]);
+  const [studentListLoading, setStudentListLoading] = useState(false);
+  const [studentListError, setStudentListError] = useState("");
 
   const selectedFiles = files.filter((f) => f.selected);
+  const totalCandidates = editColumns.filter((c) => /total|marks|overall|grand/i.test(c.trim().toLowerCase()));
+  const totalKeyScore = (c: string) => {
+    const s = c.trim().toLowerCase();
+    if (s.includes("total")) return 3;
+    if (s.includes("marks")) return 2;
+    if (s.includes("overall") || s.includes("grand")) return 1;
+    return 0;
+  };
+  const editTotalKey = totalCandidates.length > 0
+    ? [...totalCandidates].sort((a, b) => totalKeyScore(b) - totalKeyScore(a))[0]
+    : null;
+  const editComponentCols = totalCandidates.length > 0
+    ? editColumns.filter((c) => !totalCandidates.includes(c))
+    : editColumns;
+
+  const loadStudentList = useCallback(async (fileIds?: string[]) => {
+    setStudentListLoading(true);
+    setStudentListError("");
+    try {
+      const rows = await api.getStudentList(fileIds);
+      setStudentList(rows);
+    } catch (e: unknown) {
+      setStudentListError(e instanceof Error ? e.message : "Failed to load student list");
+    } finally {
+      setStudentListLoading(false);
+    }
+  }, []);
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -173,7 +208,7 @@ export function FacultyDashboard() {
 
   // ── Load uploads when upload tab is opened ─────────────────────────────────
   useEffect(() => {
-    if (activeTab !== "upload" && activeTab !== "average") return;
+    if (activeTab !== "upload" && activeTab !== "students") return;
     (async () => {
       setUploadsLoading(true);
       try {
@@ -188,6 +223,13 @@ export function FacultyDashboard() {
   }, [activeTab]);
 
   // ── Load filter options once ────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== "students") return;
+    loadStudentList(selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined);
+    // We intentionally only fetch on tab open; use the Refresh button after changing selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loadStudentList]);
+
   useEffect(() => {
     api.getFilterOptions().then(setFilterOptions).catch(() => { });
   }, []);
@@ -250,6 +292,96 @@ export function FacultyDashboard() {
     setAnalyzeError("");
   }, []);
 
+  const handleCloseEditModal = useCallback(() => {
+    setEditingFile(null);
+    setEditColumns([]);
+    setEditMarks([]);
+    setEditError("");
+    setEditLoading(false);
+    setEditSaving(false);
+  }, []);
+
+  const handleEditFile = useCallback(async (file: SelectableFile) => {
+    setEditingFile(file);
+    setEditError("");
+    setEditLoading(true);
+    try {
+      const payload = await api.getUploadMarks(file.id);
+      setEditColumns(payload.columns);
+      setEditMarks(
+        payload.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          roll_no: r.roll_no,
+          total: r.total,
+          components: Object.fromEntries(
+            (payload.columns ?? []).map((c) => [c, r.components?.[c] == null ? "" : String(r.components[c])])
+          ),
+        }))
+      );
+    } catch (e: unknown) {
+      setEditError(e instanceof Error ? e.message : "Failed to load marks");
+    } finally {
+      setEditLoading(false);
+    }
+  }, []);
+
+  const handleSaveEditedMarks = useCallback(async () => {
+    if (!editingFile) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const payload: UploadedFileMarkRow[] = editMarks.map((r) => {
+        const components: Record<string, number | null> = {};
+        for (const c of editColumns) {
+          const raw = (r.components?.[c] ?? "").trim();
+          if (!raw) {
+            components[c] = null;
+            continue;
+          }
+          const v = Number(raw);
+          if (!Number.isFinite(v)) throw new Error(`Invalid number for "${c}" (student: ${r.name})`);
+          components[c] = v;
+        }
+        return { id: r.id, name: r.name, roll_no: r.roll_no, total: r.total, components };
+      });
+      const updated = await api.updateUploadMarks(editingFile.id, payload);
+      setEditColumns(updated.columns);
+      setEditMarks(
+        updated.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          roll_no: r.roll_no,
+          total: r.total,
+          components: Object.fromEntries(updated.columns.map((c) => [c, r.components?.[c] == null ? "" : String(r.components[c])])),
+        }))
+      );
+    } catch (e: unknown) {
+      setEditError(e instanceof Error ? e.message : "Failed to save marks");
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editingFile, editMarks, editColumns]);
+
+  const handleDownloadEditedCsv = useCallback(async () => {
+    if (!editingFile) return;
+    setEditError("");
+    try {
+      const blob = await api.downloadUploadMarksCsv(editingFile.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const base = (editingFile.name || "marks").replace(/\.[^.]+$/, "");
+      a.href = url;
+      a.download = `${base}_edited.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e: unknown) {
+      setEditError(e instanceof Error ? e.message : "Failed to download CSV");
+    }
+  }, [editingFile]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
@@ -275,21 +407,6 @@ export function FacultyDashboard() {
 
   const toggleFileSelect = (id: string) => {
     setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, selected: !f.selected } : f)));
-  };
-
-  const generateAverage = async () => {
-    if (selectedFiles.length < 2) return;
-    setAverageLoading(true);
-    setAverageError("");
-    try {
-      const report = await api.generateAverage(selectedFiles.map((f) => f.id));
-      setAverageReport(report);
-      setActiveTab("average");
-    } catch (e: unknown) {
-      setAverageError(e instanceof Error ? e.message : "Failed to generate report");
-    } finally {
-      setAverageLoading(false);
-    }
   };
 
   // ── Reusable sub-components ────────────────────────────────────────────────
@@ -385,9 +502,9 @@ export function FacultyDashboard() {
             <div>
               <h1 className="text-lg text-foreground">
                 {activeTab === "dashboard" && "Dashboard Overview"}
-                {activeTab === "upload" && "Upload Documents"}
+                {activeTab === "upload" && "Student Marks"}
                 {activeTab === "analytics" && "Performance Analytics"}
-                {activeTab === "average" && "Generate Average"}
+                {activeTab === "students" && "Student List"}
               </h1>
               <p className="text-sm text-muted-foreground">
                 Welcome back, {profile.name || "Faculty"}
@@ -572,8 +689,8 @@ export function FacultyDashboard() {
 
               {uploadError && <ErrorBanner message={uploadError} onDismiss={() => setUploadError("")} />}
 
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                <div className="lg:col-span-3 space-y-6">
+              <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-6">
                   {/* Drag & Drop */}
                   <div
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -634,6 +751,9 @@ export function FacultyDashboard() {
                                 <button onClick={() => handleOpenFile(file)} className="p-1.5 hover:bg-indigo-50 rounded-lg cursor-pointer">
                                   <Eye className="w-4 h-4 text-gray-400 hover:text-indigo-600" />
                                 </button>
+                                <button onClick={() => handleEditFile(file)} className="p-1.5 hover:bg-purple-50 rounded-lg cursor-pointer">
+                                  <Pencil className="w-4 h-4 text-gray-400 hover:text-purple-600" />
+                                </button>
                                 <button onClick={() => handleDelete(file.id)} className="p-1.5 hover:bg-red-50 rounded-lg cursor-pointer">
                                   <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
                                 </button>
@@ -652,49 +772,6 @@ export function FacultyDashboard() {
                   </div>
                 </div>
 
-                {/* Average Performance Generator */}
-                <div className="lg:col-span-2 space-y-4">
-                  <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
-                        <Calculator className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-foreground">Average Performance</h3>
-                        <p className="text-xs text-muted-foreground">Generator</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Select 2 or more files to generate an average performance report.
-                    </p>
-                    <div className="bg-gray-50 rounded-xl p-4 mb-4">
-                      <p className="text-xs text-muted-foreground mb-2">Selected Files ({selectedFiles.length})</p>
-                      {selectedFiles.length === 0 ? (
-                        <p className="text-sm text-gray-400 italic">No files selected</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {selectedFiles.map((f) => (
-                            <div key={f.id} className="flex items-center gap-2 text-sm">
-                              <FileText className="w-4 h-4 text-indigo-500" />
-                              <span className="text-foreground truncate">{f.name}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {averageError && <ErrorBanner message={averageError} onDismiss={() => setAverageError("")} />}
-                    <button
-                      onClick={generateAverage}
-                      disabled={selectedFiles.length < 2 || averageLoading}
-                      className={`w-full py-3 rounded-xl text-sm transition-all cursor-pointer flex items-center justify-center gap-2 ${selectedFiles.length >= 2 && !averageLoading
-                        ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/25 hover:from-purple-700 hover:to-indigo-700"
-                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        }`}
-                    >
-                      {averageLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</> : "Generate Average Report"}
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           )
@@ -909,113 +986,226 @@ export function FacultyDashboard() {
             )
           }
 
-          {/* ── Generate Average Tab ──────────────────────────────────────── */}
+          {/* ── Student List Tab ─────────────────────────────────────────── */}
           {
-            activeTab === "average" && (
+            activeTab === "students" && (
               <div className="space-y-6">
                 <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                  <h3 className="text-foreground mb-2">Generate Average Performance</h3>
-                  <p className="text-sm text-muted-foreground mb-6">Select multiple documents to compute aggregated performance metrics.</p>
-                  {uploadsLoading ? (
-                    <LoadingSpinner text="Loading files…" />
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {files.map((file) => (
-                        <div
-                          key={file.id}
-                          onClick={() => toggleFileSelect(file.id)}
-                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${file.selected ? "border-indigo-500 bg-indigo-50" : "border-gray-100 bg-white hover:border-indigo-200"
-                            }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <CheckSquare className={`w-5 h-5 ${file.selected ? "text-indigo-600" : "text-gray-300"}`} />
-                            <div>
-                              <p className="text-sm text-foreground">{file.name}</p>
-                              <p className="text-xs text-muted-foreground">{file.date}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <h3 className="text-foreground mb-1">Student List</h3>
+                      <p className="text-sm text-muted-foreground">Students and marks parsed from your uploaded documents.</p>
                     </div>
-                  )}
-                  {averageError && <div className="mt-4"><ErrorBanner message={averageError} onDismiss={() => setAverageError("")} /></div>}
-                  <button
-                    onClick={generateAverage}
-                    disabled={selectedFiles.length < 2 || averageLoading}
-                    className={`mt-6 px-8 py-3 rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 ${selectedFiles.length >= 2 && !averageLoading
-                      ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25"
-                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      }`}
-                  >
-                    {averageLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</> : `Generate Average (${selectedFiles.length} files selected)`}
-                  </button>
+                    <button
+                      onClick={() => loadStudentList(selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined)}
+                      disabled={studentListLoading}
+                      className="px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {studentListLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Refreshing…</> : "Refresh"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-4">
+                    Tip: Select one or more files in <span className="text-foreground">Student Marks</span> to filter this list.
+                  </p>
                 </div>
 
-                {averageReport && (
-                  <div className="space-y-6">
-                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center">
-                          <FileText className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <h3>Average Report</h3>
-                          <p className="text-sm text-white/70">
-                            Generated from {averageReport.source_files.length} documents
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[
-                          { label: "Average Score", value: `${averageReport.avg_score}%` },
-                          { label: "Pass Rate", value: `${averageReport.pass_rate}%` },
-                          { label: "Highest Score", value: averageReport.highest_score },
-                          { label: "Lowest Score", value: averageReport.lowest_score },
-                        ].map(({ label, value }) => (
-                          <div key={label} className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-xs text-white/70">{label}</p>
-                            <p className="text-2xl mt-1">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                {studentListError && <ErrorBanner message={studentListError} onDismiss={() => setStudentListError("")} />}
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-foreground mb-4">Average Marks Comparison</h3>
-                        <ResponsiveContainer width="100%" height={280}>
-                          <BarChart data={averageReport.student_marks}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                            <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                            <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                            <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0" }} />
-                            <Bar dataKey="marks" fill="url(#avgGrad)" radius={[6, 6, 0, 0]} />
-                            <defs>
-                              <linearGradient id="avgGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#8b5cf6" />
-                                <stop offset="100%" stopColor="#6366f1" />
-                              </linearGradient>
-                            </defs>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-foreground mb-4">Average Grade Distribution</h3>
-                        <ResponsiveContainer width="100%" height={280}>
-                          <PieChart>
-                            <Pie data={averageReport.grade_distribution} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={4} dataKey="value">
-                              {averageReport.grade_distribution.map((entry) => (
-                                <Cell key={entry.name} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0" }} />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
+                {studentListLoading ? (
+                  <LoadingSpinner text="Loading students…" />
+                ) : studentList.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400">
+                    <InboxIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm mb-1">No student data yet</p>
+                    <p className="text-xs mb-4">Upload a CSV/XLSX marks sheet to populate the student list.</p>
+                    <button
+                      onClick={() => setActiveTab("upload")}
+                      className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 transition-colors cursor-pointer"
+                    >
+                      Go to Upload
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-foreground">Students</h3>
+                      <p className="text-sm text-muted-foreground">{studentList.length} rows</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b">
+                            <th className="py-3 pr-4 font-medium">Roll No</th>
+                            <th className="py-3 pr-4 font-medium">Name</th>
+                            <th className="py-3 pr-4 font-medium">Subject</th>
+                            <th className="py-3 pr-4 font-medium">Marks</th>
+                            <th className="py-3 pr-4 font-medium">File</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {[...studentList]
+                            .sort((a, b) => (a.roll_no ?? a.name).localeCompare(b.roll_no ?? b.name))
+                            .map((row) => {
+                              const fileName = files.find((f) => f.id === row.file_id)?.name ?? row.file_id;
+                              return (
+                                <tr key={`${row.file_id}:${row.roll_no ?? row.name}:${row.subject}`} className="hover:bg-gray-50">
+                                  <td className="py-3 pr-4 text-foreground">{row.roll_no ?? "—"}</td>
+                                  <td className="py-3 pr-4 text-foreground">{row.name}</td>
+                                  <td className="py-3 pr-4">
+                                    <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{row.subject}</span>
+                                  </td>
+                                  <td className="py-3 pr-4 text-foreground">{Number.isFinite(row.marks) ? Math.round(row.marks) : row.marks}</td>
+                                  <td className="py-3 pr-4 text-muted-foreground truncate max-w-[240px]">{fileName}</td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
+              </div>
+            )
+          }
+
+          {/* ── Edit Marks Modal ─────────────────────────────────────────── */}
+          {
+            editingFile && (
+              <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={handleCloseEditModal}>
+                <div
+                  className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                        <Pencil className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-foreground text-sm">Edit Student Marks</h3>
+                        <p className="text-xs text-muted-foreground truncate max-w-[52ch]">
+                          {editingFile.name} &middot; {editingFile.subject} &middot; {editingFile.date}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDownloadEditedCsv}
+                        disabled={editLoading || editSaving}
+                        className="px-3 py-2 rounded-xl text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        Download CSV
+                      </button>
+                      <button
+                        onClick={handleSaveEditedMarks}
+                        disabled={editLoading || editSaving}
+                        className="px-3 py-2 rounded-xl text-sm bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {editSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save"}
+                      </button>
+                      <button onClick={handleCloseEditModal} className="p-2 hover:bg-gray-100 rounded-xl cursor-pointer">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-6 overflow-auto">
+                    {editError && <div className="mb-4"><ErrorBanner message={editError} onDismiss={() => setEditError("")} /></div>}
+
+                    {editLoading ? (
+                      <LoadingSpinner text="Loading marks…" />
+                    ) : (
+                      editColumns.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center text-gray-400">
+                          <InboxIcon className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                          <p className="text-sm mb-1">No component columns found</p>
+                          <p className="text-xs">This upload only has Total marks, or the database migration for per-component marks isn’t applied.</p>
+                        </div>
+                      ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b">
+                              <th className="py-3 pr-4 font-medium sticky top-0 left-0 bg-white z-30 min-w-[200px] border-r border-gray-100">Roll No</th>
+                              <th className="py-3 pr-4 font-medium sticky top-0 left-[200px] bg-white z-30 min-w-[240px] border-r border-gray-100">Name</th>
+                              {editComponentCols.map((c) => (
+                                <th key={c} className="py-3 pr-4 font-medium whitespace-nowrap sticky top-0 bg-white z-10">{c}</th>
+                              ))}
+                              <th className="py-3 pr-4 font-medium sticky top-0 bg-white z-10">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {editMarks.map((row) => (
+                              <tr key={row.id} className="hover:bg-gray-50">
+                                <td className="py-2 pr-4 sticky left-0 bg-white z-20 border-r border-gray-100">
+                                  <input
+                                    value={row.roll_no ?? ""}
+                                    onChange={(e) => setEditMarks((prev) => prev.map((r) => (r.id === row.id ? { ...r, roll_no: e.target.value } : r)))}
+                                    className="w-full min-w-[200px] px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="Roll No"
+                                  />
+                                </td>
+                                <td className="py-2 pr-4 sticky left-[200px] bg-white z-20 border-r border-gray-100">
+                                  <input
+                                    value={row.name}
+                                    onChange={(e) => setEditMarks((prev) => prev.map((r) => (r.id === row.id ? { ...r, name: e.target.value } : r)))}
+                                    className="w-full min-w-[240px] px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="Student name"
+                                  />
+                                </td>
+                                {editComponentCols.map((col) => (
+                                  <td key={col} className="py-2 pr-4">
+                                    <input
+                                      value={row.components?.[col] ?? ""}
+                                      onChange={(e) => setEditMarks((prev) => prev.map((r) => {
+                                        if (r.id !== row.id) return r;
+                                        const components = { ...(r.components || {}), [col]: e.target.value };
+                                        let total = 0;
+                                        if (editTotalKey) {
+                                          const v = Number((components[editTotalKey] ?? "").trim());
+                                          total = Number.isFinite(v) ? v : 0;
+                                        } else {
+                                          total = editComponentCols.reduce((acc, c) => {
+                                            const v = Number((components[c] ?? "").trim());
+                                            return Number.isFinite(v) ? acc + v : acc;
+                                          }, 0);
+                                        }
+                                        return { ...r, components, total };
+                                      }))}
+                                      className="w-full min-w-[120px] px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                      placeholder="0"
+                                      inputMode="decimal"
+                                    />
+                                  </td>
+                                ))}
+                                <td className="py-2 pr-4 text-foreground font-medium whitespace-nowrap">
+                                  {editTotalKey ? (
+                                    <input
+                                      value={row.components?.[editTotalKey] ?? ""}
+                                      onChange={(e) => setEditMarks((prev) => prev.map((r) => {
+                                        if (r.id !== row.id) return r;
+                                        const components = { ...(r.components || {}), [editTotalKey]: e.target.value };
+                                        const v = Number((components[editTotalKey] ?? "").trim());
+                                        const total = Number.isFinite(v) ? v : 0;
+                                        return { ...r, components, total };
+                                      }))}
+                                      className="w-full min-w-[120px] px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                      placeholder="0"
+                                      inputMode="decimal"
+                                    />
+                                  ) : (
+                                    Number.isFinite(row.total) ? Math.round(row.total * 10) / 10 : row.total
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      )
+                    )}
+                  </div>
+                </div>
               </div>
             )
           }

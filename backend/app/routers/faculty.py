@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile, Query, Response
 
 from app.core.dependencies import require_faculty
 from app.schemas.faculty import (
@@ -8,6 +8,10 @@ from app.schemas.faculty import (
     FacultyStats,
     FileAnalysis,
     FilterOptions,
+    StudentListItem,
+    UploadedFileMarkRow,
+    UploadedFileMarksResponse,
+    UpdateUploadedFileMarksRequest,
     UploadedFile,
     UploadedFileList,
 )
@@ -107,6 +111,41 @@ def analyze_upload(file_id: str, current_user: dict = Depends(require_faculty)) 
     return faculty_service.analyze_file(file_id, current_user["id"])
 
 
+@router.get(
+    "/uploads/{file_id}/marks",
+    response_model=UploadedFileMarksResponse,
+    summary="List persisted marks rows for an upload",
+)
+def list_upload_marks(file_id: str, current_user: dict = Depends(require_faculty)) -> UploadedFileMarksResponse:
+    return faculty_service.get_uploaded_file_marks(file_id, current_user["id"])
+
+
+@router.put(
+    "/uploads/{file_id}/marks",
+    response_model=UploadedFileMarksResponse,
+    summary="Update persisted marks rows for an upload",
+)
+def update_upload_marks(
+    file_id: str,
+    body: UpdateUploadedFileMarksRequest,
+    current_user: dict = Depends(require_faculty),
+) -> UploadedFileMarksResponse:
+    return faculty_service.update_uploaded_file_marks(file_id, current_user["id"], [m.model_dump() for m in body.marks])
+
+
+@router.get(
+    "/uploads/{file_id}/marks/export",
+    summary="Download (edited) marks as CSV",
+)
+def export_upload_marks(file_id: str, current_user: dict = Depends(require_faculty)) -> Response:
+    csv_text, filename = faculty_service.export_uploaded_file_marks_csv(file_id, current_user["id"])
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
 @router.get(
@@ -153,3 +192,15 @@ def generate_average(body: AverageReportRequest, current_user: dict = Depends(re
 def get_filter_options() -> FilterOptions:
     """Provides the lists used to populate the filter dropdowns on the frontend."""
     return faculty_service.get_filter_options()
+
+
+@router.get(
+    "/students",
+    response_model=list[StudentListItem],
+    summary="List students from uploaded marks",
+)
+def list_students(
+    current_user: dict = Depends(require_faculty),
+    file_ids: list[str] | None = Query(None, description="Optional uploaded file IDs to scope the list"),
+) -> list[StudentListItem]:
+    return faculty_service.get_student_list(current_user["id"], file_ids)

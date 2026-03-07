@@ -10,14 +10,17 @@ File flow:
 
 import csv
 import io
+import json
 import logging
 import os
+import re
 import statistics
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import inspect
 
 import app.core.database as _db
 from app.core.database import UPLOAD_DIR
@@ -63,6 +66,91 @@ def _is_marks_col(h: str)     -> bool:
     clean = _clean_header(h)
     return clean in _MARKS_ALIASES or str(h).strip().lower() in _MARKS_ALIASES
 
+def _is_serial_like_col(h: str) -> bool:
+    """Detect S.No/Serial columns so they don't appear as marks components."""
+    return str(h).strip().lower() in _ROLL_ALIASES_LOW or _clean_header(h) in _ROLL_ALIASES_LOW
+
+def _looks_like_serial_col(col: str, rows: list[dict]) -> bool:
+    """
+    Detect serial-number columns even when the header is blank/unknown.
+
+    Typical examples are 1..N, 0..N-1, mostly unique, small integers.
+    """
+    values: list[int] = []
+    for r in rows[:30]:
+        v = r.get(col)
+        n = _try_parse_number(v)
+        if n is None:
+            continue
+        if abs(n - round(n)) > 1e-9:
+            return False
+        values.append(int(round(n)))
+        if len(values) >= 12:
+            break
+    if len(values) < 6:
+        return False
+    uniq = set(values)
+    if len(uniq) / len(values) < 0.9:
+        return False
+    mn, mx = min(values), max(values)
+    # reject obviously-not-serial columns
+    if mx > 200:
+        return False
+    # common serial forms
+    if mn in (0, 1) and mx <= len(uniq) + 3:
+        return True
+    return False
+
+def _detect_header_row_index(rows_raw: list[tuple]) -> int:
+    """
+    XLSX sheets sometimes have a title row above the real header.
+    Pick the first row with the best "header-like" score.
+    """
+    best_i = 0
+    best_score = -1
+    for i in range(min(10, len(rows_raw))):
+        row = rows_raw[i]
+        score = 0
+        non_empty = 0
+        for cell in row:
+            if cell is None or str(cell).strip() == "":
+                continue
+            non_empty += 1
+            text = str(cell).strip()
+            if _is_name_col(text):
+                score += 3
+            elif _is_roll_col(text) or _is_roll_col_high(text):
+                score += 3
+            elif _is_marks_col(text):
+                score += 3
+            else:
+                clean = _clean_header(text)
+                if any(t in clean.replace(" ", "") for t in ("assign", "bit", "quiz", "mid", "unit", "internal", "external", "descriptive", "lab", "project", "viva")):
+                    score += 1
+        # ignore almost-empty rows (common for titles)
+        if non_empty <= 1:
+            continue
+        if score > best_score:
+            best_score = score
+            best_i = i
+    # Require at least 2 strong hits; otherwise keep the first row.
+    return best_i if best_score >= 6 else 0
+
+def _dedupe_total_like_columns(columns: list[str]) -> list[str]:
+    """
+    Avoid duplicate Total/Marks columns (e.g. 'Total', 'Total (100)', 'TOTAL ').
+    Keep the first total-like column in the list and drop the rest.
+    """
+    out: list[str] = []
+    total_seen = False
+    for c in columns:
+        if _is_marks_col(c):
+            if total_seen:
+                continue
+            total_seen = True
+        out.append(c)
+    return out
+
 def _is_numeric_col(col: str, rows: list[dict]) -> bool:
     vals = [rows[i].get(col) for i in range(min(20, len(rows)))]
     numeric = total = 0
@@ -86,6 +174,55 @@ def _col_mean(col: str, rows: list[dict]) -> float:
         except (TypeError, ValueError):
             pass
     return sum(vals) / len(vals) if vals else 0.0
+
+
+_NUM_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+
+
+def _try_parse_number(value) -> float | None:
+    """
+    Parse numeric-like cell values.
+
+    Supports formats like:
+    - 10, 10.5, "10", "10.0"
+    - "9/10" (takes the first number)
+    - "10 (out of 10)" (takes first number)
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return float(value)
+        except Exception:
+            return None
+    s = str(value).strip()
+    if not s:
+        return None
+    s_low = s.lower()
+    if s_low in {"absent", "ab", "a", "na", "n/a", "none", "nan", "-"}:
+        return None
+    # Try fast float
+    try:
+        return float(s.replace(",", ""))
+    except Exception:
+        pass
+    # Extract first number
+    m = _NUM_RE.search(s.replace(",", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except Exception:
+        return None
+
+
+def _col_numeric_count(col: str, rows: list[dict], limit: int = 50) -> int:
+    count = 0
+    for r in rows[:limit]:
+        v = r.get(col)
+        if _try_parse_number(v) is not None:
+            count += 1
+    return count
 
 
 def _normalize_roll_no(value) -> str:
@@ -115,6 +252,14 @@ def _normalize_roll_no(value) -> str:
 
 
 # ── File parsing ──────────────────────────────────────────────────────────────
+
+def _student_marks_has_components(session) -> bool:
+    try:
+        insp = inspect(session.get_bind())
+        cols = {c["name"] for c in insp.get_columns("student_marks")}
+        return "components_json" in cols
+    except Exception:
+        return False
 
 def _read_file_bytes(file_path: str) -> bytes:
     try:
@@ -161,9 +306,11 @@ def _parse_xlsx(raw: bytes) -> list[dict]:
         return []
     if not rows_raw:
         return []
-    headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows_raw[0])]
+    header_idx = _detect_header_row_index(rows_raw)
+    header_row = rows_raw[header_idx] if header_idx < len(rows_raw) else rows_raw[0]
+    headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(header_row)]
     rows = []
-    for row in rows_raw[1:]:
+    for row in rows_raw[header_idx + 1 :]:
         if any(c is not None and str(c).strip() != "" for c in row):
             rows.append(dict(zip(headers, row)))
     return _extract_marks(rows)
@@ -214,6 +361,8 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
         roll_col = next((c for c in headers if _is_roll_col(c)), None)
 
     excluded: set[str] = {c for c in (name_col, roll_col) if c is not None}
+    # Exclude serial-number columns so they don't become components (even if the header is blank).
+    excluded |= {c for c in headers if _is_serial_like_col(c) or _looks_like_serial_col(c, rows)}
 
     marks_col = next((c for c in headers if _is_marks_col(c) and c not in excluded), None)
     if marks_col is None:
@@ -225,12 +374,35 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
         logger.warning("No marks column found. headers=%s", headers)
         return []
 
+    def _is_component_header(h: str) -> bool:
+        clean = _clean_header(h)
+        if not clean:
+            return False
+        # exclude obvious non-score columns
+        if clean in {"grade", "result", "remarks", "remark", "status"}:
+            return False
+        tokens = {
+            "assign", "assignment", "ass", "bit", "bits", "quiz", "mid", "midterm", "unit", "test",
+            "internal", "external", "theory", "practical", "lab", "project", "viva", "descriptive",
+        }
+        return any(t in clean.replace(" ", "") for t in tokens)
+
+    # Component columns: include any column that has at least one numeric-like value in the sample,
+    # OR the header looks like a marks component (so sparse columns still show up).
+    metric_cols = [c for c in headers if c not in excluded and (_col_numeric_count(c, rows) > 0 or _is_component_header(c))]
+    if marks_col and marks_col not in metric_cols:
+        metric_cols.append(marks_col)
+
     result = []
     for r in rows[:500]:
         try:
             raw_name = str(r.get(name_col, "")).strip()
             if not raw_name or raw_name.lower() in ("none", "nan", ""):
                 continue
+
+            components: dict[str, float | None] = {}
+            for c in metric_cols:
+                components[c] = _try_parse_number(r.get(c))
 
             raw_val = r.get(marks_col)
             if raw_val is None:
@@ -243,16 +415,18 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
                 for c in other:
                     v = r.get(c)
                     if v is not None:
-                        try:
-                            computed += float(str(v).replace(",", ""))
+                        parsed = _try_parse_number(v)
+                        if parsed is not None:
+                            computed += parsed
                             ok = True
-                        except (TypeError, ValueError):
-                            pass
                 if not ok:
                     continue
                 marks = computed
             else:
-                marks = float(str(raw_val).replace(",", ""))
+                parsed = _try_parse_number(raw_val)
+                if parsed is None:
+                    continue
+                marks = parsed
 
             roll_val = ""
             if roll_col:
@@ -267,7 +441,7 @@ def _extract_marks(rows: list[dict]) -> list[dict]:
                     if better:
                         roll_val = _normalize_roll_no(r.get(better, ""))
 
-            result.append({"name": raw_name, "roll_no": roll_val, "marks": marks})
+            result.append({"name": raw_name, "roll_no": roll_val, "marks": marks, "components": components})
         except (TypeError, ValueError):
             continue
     return result
@@ -286,8 +460,10 @@ def _parse_raw_rows(file_path: str, filename: str) -> tuple[list[dict], list[str
             rows_raw = list(ws.iter_rows(values_only=True))
             if not rows_raw:
                 return [], []
-            headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows_raw[0])]
-            rows = [dict(zip(headers, row)) for row in rows_raw[1:] if any(c is not None for c in row)]
+            header_idx = _detect_header_row_index(rows_raw)
+            header_row = rows_raw[header_idx] if header_idx < len(rows_raw) else rows_raw[0]
+            headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(header_row)]
+            rows = [dict(zip(headers, row)) for row in rows_raw[header_idx + 1 :] if any(c is not None for c in row)]
         else:
             text = raw.decode("utf-8", errors="replace")
             reader = csv.DictReader(io.StringIO(text))
@@ -532,10 +708,13 @@ def add_file(
                 for i, m in enumerate(marks_rows):
                     m["marks"] = round(marks_vals[i] * scale, 1)
 
+            has_components = _student_marks_has_components(session)
             mark_objs: list[StudentMark] = []
             for m in marks_rows:
                 student_name = (m.get("name") or "").strip() or "Unknown"
                 roll_no = _normalize_roll_no(m.get("roll_no") or "") or None
+                components = m.get("components") or {}
+                components_json = json.dumps(components, ensure_ascii=False) if (has_components and components) else None
                 mark_objs.append(
                     StudentMark(
                         id=str(uuid.uuid4()),
@@ -543,6 +722,7 @@ def add_file(
                         student_name=student_name,
                         roll_no=roll_no,
                         marks=float(m["marks"]),
+                        components_json=components_json,
                         created_at=now,
                     )
                 )
@@ -756,3 +936,425 @@ def get_filter_options() -> dict:
         "sections":    db.SECTIONS,
         "subjects":    db.SUBJECTS,
     }
+
+
+def get_student_list(faculty_user_id: str, file_ids: list[str] | None = None) -> list[dict]:
+    """
+    Return a simple student list (name/roll/marks) for the faculty's uploaded files.
+
+    If file_ids is provided, it is scoped to those uploads (ownership enforced).
+    """
+    if file_ids:
+        for fid in file_ids:
+            get_file_by_id(fid, faculty_user_id)
+
+    with _db.SessionLocal() as session:
+        q = (
+            session.query(
+                StudentMark.student_name,
+                StudentMark.roll_no,
+                StudentMark.marks,
+                UploadedFile.subject,
+                UploadedFile.id,
+            )
+            .join(UploadedFile, UploadedFile.id == StudentMark.uploaded_file_id)
+            .filter(UploadedFile.uploaded_by_user_id == faculty_user_id)
+        )
+        if file_ids:
+            q = q.filter(StudentMark.uploaded_file_id.in_(file_ids))
+
+        rows = q.order_by(UploadedFile.created_at.desc()).all()
+        return [
+            {
+                "file_id": file_id,
+                "subject": subject or "Unknown",
+                "name": (student_name or "").strip() or "Unknown",
+                "roll_no": (roll_no or "").strip(),
+                "marks": float(marks),
+            }
+            for (student_name, roll_no, marks, subject, file_id) in rows
+        ]
+
+
+def _loads_components(value: str | None) -> dict[str, float | None]:
+    if not value:
+        return {}
+    try:
+        obj = json.loads(value)
+    except Exception:
+        return {}
+    if not isinstance(obj, dict):
+        return {}
+    out: dict[str, float | None] = {}
+    for k, v in obj.items():
+        key = str(k)
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            out[key] = None
+        else:
+            try:
+                out[key] = float(v)
+            except Exception:
+                out[key] = None
+    return out
+
+
+def _compute_total_from_components(components: dict[str, float | None]) -> float:
+    for k, v in components.items():
+        if v is None:
+            continue
+        if _is_marks_col(k):
+            return float(v)
+    total = 0.0
+    for v in components.values():
+        if v is None:
+            continue
+        total += float(v)
+    return total
+
+
+def _backfill_components_for_file(session, file_id: str, faculty_user_id: str) -> None:
+    """
+    For files uploaded before we started storing per-component marks, reconstruct
+    components from the source CSV/XLSX and persist into student_marks.components_json.
+
+    Matching strategy:
+    - Prefer roll_no (normalized)
+    - Fallback to case-insensitive student_name
+    """
+    if not _student_marks_has_components(session):
+        return
+
+    rec = (
+        session.query(UploadedFile)
+        .filter(
+            UploadedFile.id == file_id,
+            UploadedFile.uploaded_by_user_id == faculty_user_id,
+        )
+        .first()
+    )
+    if not rec:
+        return
+
+    rows, headers = _parse_raw_rows(rec.file_path, rec.name)
+    if not rows or not headers:
+        return
+
+    name_col = next((c for c in headers if _is_name_col(c)), None) or headers[0]
+    roll_col = next((c for c in headers if _is_roll_col_high(c)), None) or next((c for c in headers if _is_roll_col(c)), None)
+    excluded = {c for c in (name_col, roll_col) if c is not None}
+    excluded |= {c for c in headers if _is_serial_like_col(c)}
+
+    def _is_component_header(h: str) -> bool:
+        clean = _clean_header(h)
+        if not clean:
+            return False
+        if clean in {"grade", "result", "remarks", "remark", "status"}:
+            return False
+        tokens = {
+            "assign", "assignment", "ass", "bit", "bits", "quiz", "mid", "midterm", "unit", "test",
+            "internal", "external", "theory", "practical", "lab", "project", "viva", "descriptive",
+        }
+        return any(t in clean.replace(" ", "") for t in tokens)
+
+    metric_cols = [c for c in headers if c not in excluded and (_col_numeric_count(c, rows) > 0 or _is_component_header(c))]
+    if not metric_cols:
+        return
+
+    by_roll: dict[str, dict[str, float | None]] = {}
+    by_name: dict[str, dict[str, float | None]] = {}
+
+    for r in rows[:500]:
+        raw_name = str(r.get(name_col, "")).strip()
+        if not raw_name or raw_name.lower() in ("none", "nan", ""):
+            continue
+        raw_roll = _normalize_roll_no(r.get(roll_col, "")) if roll_col else ""
+
+        comps: dict[str, float | None] = {}
+        for c in metric_cols:
+            comps[c] = _try_parse_number(r.get(c))
+
+        if raw_roll:
+            by_roll[raw_roll] = comps
+        by_name[raw_name.strip().lower()] = comps
+
+    if not by_roll and not by_name:
+        return
+
+    marks_rows = (
+        session.query(StudentMark)
+        .filter(StudentMark.uploaded_file_id == file_id)
+        .all()
+    )
+    changed = 0
+    for sm in marks_rows:
+        if sm.components_json:
+            continue
+        roll = (sm.roll_no or "").strip()
+        name_key = (sm.student_name or "").strip().lower()
+        comps = by_roll.get(roll) if roll else None
+        if comps is None:
+            comps = by_name.get(name_key)
+        if comps is None:
+            continue
+        sm.components_json = json.dumps(comps, ensure_ascii=False)
+        changed += 1
+
+    if changed:
+        session.commit()
+
+
+def get_uploaded_file_marks(file_id: str, faculty_user_id: str) -> dict:
+    """Return persisted marks rows (including per-component scores) for an upload (ownership enforced)."""
+    get_file_by_id(file_id, faculty_user_id)
+
+    with _db.SessionLocal() as session:
+        has_components = _student_marks_has_components(session)
+        if not has_components:
+            raise HTTPException(
+                status_code=400,
+                detail="Per-component marks require a DB migration. Run `python -m alembic -c database/alembic.ini upgrade head` and restart the backend.",
+            )
+        rows = (
+            session.query(
+                StudentMark.id,
+                StudentMark.student_name,
+                StudentMark.roll_no,
+                StudentMark.marks,
+                StudentMark.components_json if has_components else None,
+            )
+            .filter(StudentMark.uploaded_file_id == file_id)
+            .order_by(StudentMark.roll_no.asc().nulls_last(), StudentMark.student_name.asc())
+            .all()
+        )
+
+        parsed = []
+        all_keys: set[str] = set()
+        for (mid, student_name, roll_no, total, components_json) in rows:
+            comps = _loads_components(components_json) if has_components else {}
+            all_keys.update(comps.keys())
+            parsed.append(((mid, student_name, roll_no, total), comps))
+
+        # Hide accidental serial-number columns that may have been stored as components.
+        def _looks_like_serial_component_key(key: str) -> bool:
+            if _is_serial_like_col(key):
+                return True
+            values: list[int] = []
+            for (_meta, comps) in parsed[:25]:
+                v = comps.get(key)
+                if v is None:
+                    continue
+                try:
+                    n = float(v)
+                except Exception:
+                    continue
+                if abs(n - round(n)) > 1e-9:
+                    return False
+                values.append(int(round(n)))
+                if len(values) >= 12:
+                    break
+            if len(values) < 6:
+                return False
+            uniq = set(values)
+            if len(uniq) / len(values) < 0.9:
+                return False
+            mn, mx = min(values), max(values)
+            if mx > 200:
+                return False
+            return mn in (0, 1) and mx <= len(uniq) + 3
+
+        serial_keys = {k for k in all_keys if _looks_like_serial_component_key(k)}
+        if serial_keys:
+            all_keys = {k for k in all_keys if k not in serial_keys}
+
+        # Backfill legacy rows that were uploaded before per-component storage existed.
+        if has_components and not all_keys:
+            _backfill_components_for_file(session, file_id, faculty_user_id)
+            rows2 = (
+                session.query(StudentMark.id, StudentMark.student_name, StudentMark.roll_no, StudentMark.marks, StudentMark.components_json)
+                .filter(StudentMark.uploaded_file_id == file_id)
+                .order_by(StudentMark.roll_no.asc().nulls_last(), StudentMark.student_name.asc())
+                .all()
+            )
+            parsed = []
+            all_keys = set()
+            for (mid, student_name, roll_no, total, components_json) in rows2:
+                comps = _loads_components(components_json)
+                all_keys.update(comps.keys())
+                parsed.append(((mid, student_name, roll_no, total), comps))
+            serial_keys = {k for k in all_keys if _looks_like_serial_component_key(k)}
+            if serial_keys:
+                all_keys = {k for k in all_keys if k not in serial_keys}
+
+        # Preserve a sensible column order based on the source sheet headers when possible.
+        columns_sorted = sorted(all_keys, key=lambda s: s.lower())
+        columns = columns_sorted
+        try:
+            rec = (
+                session.query(UploadedFile)
+                .filter(
+                    UploadedFile.id == file_id,
+                    UploadedFile.uploaded_by_user_id == faculty_user_id,
+                )
+                .first()
+            )
+            if rec:
+                raw_rows, headers = _parse_raw_rows(rec.file_path, rec.name)
+                if raw_rows and headers:
+                    name_col = next((c for c in headers if _is_name_col(c)), None) or headers[0]
+                    roll_col = next((c for c in headers if _is_roll_col_high(c)), None) or next((c for c in headers if _is_roll_col(c)), None)
+                    excluded = {c for c in (name_col, roll_col) if c is not None}
+                    excluded |= {c for c in headers if _is_serial_like_col(c) or _looks_like_serial_col(c, raw_rows)}
+
+                    def _is_component_header(h: str) -> bool:
+                        clean = _clean_header(h)
+                        if not clean:
+                            return False
+                        if clean in {"grade", "result", "remarks", "remark", "status"}:
+                            return False
+                        tokens = {
+                            "assign", "assignment", "ass", "bit", "bits", "quiz", "mid", "midterm", "unit", "test",
+                            "internal", "external", "theory", "practical", "lab", "project", "viva", "descriptive",
+                        }
+                        return any(t in clean.replace(" ", "") for t in tokens)
+
+                    ordered = [
+                        c for c in headers
+                        if c not in excluded and (_col_numeric_count(c, raw_rows) > 0 or _is_component_header(c))
+                    ]
+                    ordered = [c for c in ordered if c in all_keys]
+                    remaining = [c for c in columns_sorted if c not in set(ordered)]
+                    columns = [*ordered, *remaining]
+        except Exception:
+            pass
+        columns = _dedupe_total_like_columns(columns)
+        return {
+            "columns": columns,
+            "rows": [
+                {
+                    "id": mid,
+                    "name": (student_name or "").strip() or "Unknown",
+                    "roll_no": (roll_no or "").strip(),
+                    "total": float(total),
+                    "components": {k: comps.get(k) for k in columns},
+                }
+                for ((mid, student_name, roll_no, total), comps) in parsed
+            ],
+        }
+
+
+def update_uploaded_file_marks(file_id: str, faculty_user_id: str, marks: list[dict]) -> dict:
+    """
+    Update persisted marks rows for a specific uploaded file (ownership enforced).
+
+    Expects a full list of rows with stable `id`s. Only the provided ids are updated.
+    """
+    get_file_by_id(file_id, faculty_user_id)
+
+    if not marks:
+        raise HTTPException(status_code=422, detail="No marks rows provided.")
+
+    updates_by_id: dict[str, dict] = {}
+    for m in marks:
+        mid = (m.get("id") or "").strip()
+        if not mid:
+            raise HTTPException(status_code=422, detail="Each marks row must include an id.")
+        updates_by_id[mid] = m
+
+    with _db.SessionLocal() as session:
+        has_components = _student_marks_has_components(session)
+        existing = (
+            session.query(StudentMark)
+            .filter(
+                StudentMark.uploaded_file_id == file_id,
+                StudentMark.id.in_(list(updates_by_id.keys())),
+            )
+            .all()
+        )
+        if len(existing) != len(updates_by_id):
+            found_ids = {r.id for r in existing}
+            missing = [mid for mid in updates_by_id.keys() if mid not in found_ids]
+            raise HTTPException(status_code=404, detail=f"Marks row(s) not found: {missing[:5]}")
+
+        for row in existing:
+            upd = updates_by_id[row.id]
+            name = (upd.get("name") or "").strip()
+            if not name:
+                raise HTTPException(status_code=422, detail="Student name cannot be empty.")
+            roll = _normalize_roll_no((upd.get("roll_no") or "").strip()) or None
+
+            comps_in = upd.get("components") or {}
+            if comps_in is not None and not isinstance(comps_in, dict):
+                raise HTTPException(status_code=422, detail="components must be an object/dict.")
+
+            comps: dict[str, float | None] = {}
+            for k, v in (comps_in or {}).items():
+                key = str(k)
+                if v is None or (isinstance(v, str) and v.strip() == ""):
+                    comps[key] = None
+                else:
+                    try:
+                        comps[key] = float(v)
+                    except Exception:
+                        raise HTTPException(status_code=422, detail=f"Invalid number for '{key}'.")
+
+            if comps:
+                if not has_components:
+                    raise HTTPException(status_code=400, detail="Database not migrated for per-component marks. Run `alembic upgrade head` and re-upload the file.")
+                total_val = _compute_total_from_components(comps)
+            else:
+                # Back-compat: accept "total" (preferred) or "marks" (older clients)
+                raw_total = upd.get("total", upd.get("marks", row.marks))
+                try:
+                    total_val = float(raw_total)
+                except Exception:
+                    raise HTTPException(status_code=422, detail="Total must be a number.")
+
+            row.student_name = name
+            row.roll_no = roll
+            row.marks = total_val
+            if has_components and comps:
+                row.components_json = json.dumps(comps, ensure_ascii=False)
+
+        session.commit()
+
+    return get_uploaded_file_marks(file_id, faculty_user_id)
+
+
+def export_uploaded_file_marks_csv(file_id: str, faculty_user_id: str) -> tuple[str, str]:
+    """Export the persisted (possibly edited) marks for a file as CSV."""
+    with _db.SessionLocal() as session:
+        rec = (
+            session.query(UploadedFile)
+            .filter(
+                UploadedFile.id == file_id,
+                UploadedFile.uploaded_by_user_id == faculty_user_id,
+            )
+            .first()
+        )
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"File '{file_id}' not found.")
+
+        payload = get_uploaded_file_marks(file_id, faculty_user_id)
+        columns: list[str] = payload.get("columns", [])
+        rows: list[dict] = payload.get("rows", [])
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        total_key = next((c for c in columns if _is_marks_col(c)), None)
+        writer.writerow(["roll_no", "name", *columns] if total_key else ["roll_no", "name", *columns, "total"])
+        for r in rows:
+            comps = r.get("components") or {}
+            out = [
+                (r.get("roll_no") or ""),
+                (r.get("name") or ""),
+                *[(comps.get(c) if comps.get(c) is not None else "") for c in columns],
+            ]
+            if not total_key:
+                out.append(float(r.get("total") or 0))
+            writer.writerow(out)
+        csv_text = buf.getvalue()
+
+        base = (rec.name or "marks").rsplit(".", 1)[0]
+        safe = "".join(ch if ch.isalnum() or ch in (" ", "_", "-", ".") else "_" for ch in base).strip() or "marks"
+        filename = f"{safe}_edited.csv"
+        return csv_text, filename

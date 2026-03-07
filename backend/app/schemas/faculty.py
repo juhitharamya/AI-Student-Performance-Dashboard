@@ -99,6 +99,35 @@ class AnalyticsData(BaseModel):
     filters_applied: dict | None = None
 
 
+# ── Student list ─────────────────────────────────────────────────────────────
+
+class StudentListItem(BaseModel):
+    file_id: str
+    subject: str
+    name: str
+    roll_no: str = ""
+    marks: float
+
+
+# ── Editable marks ────────────────────────────────────────────────────────────
+
+class UploadedFileMarkRow(BaseModel):
+    id: str
+    name: str
+    roll_no: str = ""
+    total: float
+    components: dict[str, float | None] = {}
+
+
+class UpdateUploadedFileMarksRequest(BaseModel):
+    marks: list[UploadedFileMarkRow]
+
+
+class UploadedFileMarksResponse(BaseModel):
+    columns: list[str]
+    rows: list[UploadedFileMarkRow]
+
+
 # ── Average report ────────────────────────────────────────────────────────────
 
 class AverageReportRequest(BaseModel):

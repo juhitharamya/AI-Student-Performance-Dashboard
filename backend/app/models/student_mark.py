@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Index
+from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Index, Text
 
 from app.core.database import Base
 
@@ -23,6 +23,10 @@ class StudentMark(Base):
     roll_no = Column(String, nullable=True, index=True)
     marks = Column(Float, nullable=False)
 
+    # JSON-encoded dict of per-component scores (e.g. {"assignment": 8, "mid": 22, "descriptive": 30})
+    # Stored as Text for cross-DB compatibility (SQLite dev + Postgres prod).
+    components_json = Column(Text, nullable=True)
+
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -32,4 +36,3 @@ class StudentMark(Base):
     __table_args__ = (
         Index("ix_student_marks_file_roll_name", "uploaded_file_id", "roll_no", "student_name"),
     )
-
