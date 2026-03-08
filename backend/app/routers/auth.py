@@ -1,10 +1,19 @@
 from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_current_user
-from app.schemas.auth import LoginRequest, MeResponse, RegisterRequest, RegisterResponse, TokenResponse
+from app.schemas.auth import AdminExistsResponse, LoginRequest, MeResponse, RegisterRequest, RegisterResponse, TokenResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get(
+    "/admin-exists",
+    response_model=AdminExistsResponse,
+    summary="Check whether an admin account already exists",
+)
+def admin_exists() -> AdminExistsResponse:
+    return {"exists": auth_service.admin_exists()}
 
 
 # ── Register ──────────────────────────────────────────────────────────────────
@@ -13,19 +22,12 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/register",
     response_model=RegisterResponse,
     status_code=201,
-    summary="Create a new user account (faculty or student)",
+    summary="Create the first admin account",
 )
 def register(body: RegisterRequest) -> RegisterResponse:
     """
-    Register a new **faculty** or **student** account.
-
-    - `name`, `email`, `password`, `role` are required.
-    - `password` must be at least 6 characters.
-    - Returns a Bearer token immediately so the client can proceed without
-      a separate login step.
-
-    **Student optional fields**: `roll_no`, `year`, `section`, `department`  
-    **Faculty optional fields**: `title`, `department`
+    Register the initial **admin** account.
+    Allowed only once. After that, use `/auth/login` for admin sign-in.
     """
     return auth_service.register_user(body)
 

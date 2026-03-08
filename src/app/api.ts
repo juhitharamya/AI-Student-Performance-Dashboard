@@ -14,7 +14,7 @@ export const PROFILE_KEY = "auth_profile";
 export interface AuthProfile {
     access_token: string;
     token_type: string;
-    role: "faculty" | "student";
+    role: "admin" | "faculty" | "student";
     name: string;
     avatar_initials: string;
 }
@@ -23,7 +23,7 @@ export interface MeResponse {
     id: string;
     name: string;
     email: string;
-    role: "faculty" | "student";
+    role: "admin" | "faculty" | "student";
     avatar_initials: string;
 }
 
@@ -77,11 +77,19 @@ export interface AverageReport {
 }
 
 export interface StudentListItem {
-    file_id: string;
-    subject: string;
+    id: string;
     name: string;
     roll_no: string;
-    marks: number;
+}
+
+export interface StudentListFile {
+    id: string;
+    name: string;
+    date: string;
+    department: string;
+    year: string;
+    section: string;
+    size: string;
 }
 
 export interface UploadedFileMarkRow {
@@ -182,7 +190,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export async function login(
     email: string,
     password: string,
-    role: string
+    role: "admin" | "faculty" | "student"
 ): Promise<AuthProfile> {
     const res = await fetch(`${BASE}/auth/login`, {
         method: "POST",
@@ -229,6 +237,21 @@ export async function getFacultyStats(filters?: {
     return handleResponse<FacultyStats>(res);
 }
 
+export async function adminExists(): Promise<boolean> {
+    const res = await fetch(`${BASE}/auth/admin-exists`);
+    const data = await handleResponse<{ exists: boolean }>(res);
+    return data.exists;
+}
+
+export async function adminSignup(name: string, email: string, password: string): Promise<AuthProfile> {
+    const res = await fetch(`${BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role: "admin" }),
+    });
+    return handleResponse<AuthProfile>(res);
+}
+
 export async function getUploads(): Promise<UploadedFile[]> {
     const res = await fetch(`${BASE}/faculty/uploads`, { headers: authHeaders() });
     const data = await handleResponse<{ files: UploadedFile[] }>(res);
@@ -237,11 +260,12 @@ export async function getUploads(): Promise<UploadedFile[]> {
 
 export async function uploadFile(
     file: File,
-    meta: { subject: string; department: string; year: string; section: string }
+    meta: { subject: string; test_type: string; department: string; year: string; section: string }
 ): Promise<UploadedFile> {
     const form = new FormData();
     form.append("file", file);
     form.append("subject", meta.subject || "General");
+    form.append("test_type", meta.test_type || "");
     form.append("department", meta.department || "");
     form.append("year", meta.year || "");
     form.append("section", meta.section || "");
@@ -300,18 +324,68 @@ export async function getStudentList(params?: {
     department?: string;
     year?: string;
     section?: string;
-    test_type?: string;
 }): Promise<StudentListItem[]> {
     const qsParams = new URLSearchParams();
     for (const id of params?.fileIds ?? []) qsParams.append("file_ids", id);
     if (params?.department) qsParams.set("department", params.department);
     if (params?.year) qsParams.set("year", params.year);
     if (params?.section) qsParams.set("section", params.section);
-    if (params?.test_type) qsParams.set("test_type", params.test_type);
     const qs = qsParams.toString();
     const url = qs ? `${BASE}/faculty/students?${qs}` : `${BASE}/faculty/students`;
     const res = await fetch(url, { headers: authHeaders() });
     return handleResponse<StudentListItem[]>(res);
+}
+
+export async function getStudentListFile(filters: { department: string; year: string; section: string }): Promise<StudentListFile | null> {
+    const params = new URLSearchParams();
+    params.set("department", filters.department);
+    params.set("year", filters.year);
+    params.set("section", filters.section);
+    const res = await fetch(`${BASE}/faculty/student-list/file?${params.toString()}`, {
+        headers: authHeaders(),
+    });
+    return handleResponse<StudentListFile | null>(res);
+}
+
+export async function uploadStudentListFile(
+    file: File,
+    filters: { department: string; year: string; section: string }
+): Promise<StudentListFile> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("department", filters.department);
+    form.append("year", filters.year);
+    form.append("section", filters.section);
+    const res = await fetch(`${BASE}/faculty/student-list/upload`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: form,
+    });
+    return handleResponse<StudentListFile>(res);
+}
+
+export async function getStudentListRows(fileId: string): Promise<StudentListItem[]> {
+    const res = await fetch(`${BASE}/faculty/student-list/file/${fileId}/rows`, {
+        headers: authHeaders(),
+    });
+    return handleResponse<StudentListItem[]>(res);
+}
+
+export async function updateStudentListRows(fileId: string, rows: StudentListItem[]): Promise<StudentListItem[]> {
+    const res = await fetch(`${BASE}/faculty/student-list/file/${fileId}/rows`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+    });
+    return handleResponse<StudentListItem[]>(res);
+}
+
+export async function deleteStudentListFile(fileId: string): Promise<void> {
+    const res = await fetch(`${BASE}/faculty/student-list/file/${fileId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+    });
+    await handleResponse<unknown>(res);
 }
 
 export async function getAnalytics(filters?: {
@@ -395,6 +469,40 @@ export async function getFilterOptions(): Promise<FilterOptions> {
         headers: authHeaders(),
     });
     return handleResponse<FilterOptions>(res);
+}
+
+export interface AdminUserItem {
+    id: string;
+    name: string;
+    email: string;
+    role: "faculty" | "student";
+    title?: string | null;
+    department?: string | null;
+    year?: string | null;
+    section?: string | null;
+    roll_no?: string | null;
+}
+
+export async function getAdminUsers(): Promise<AdminUserItem[]> {
+    const res = await fetch(`${BASE}/admin/users`, { headers: authHeaders() });
+    return handleResponse<AdminUserItem[]>(res);
+}
+
+export async function createAdminUser(payload: {
+    role: "faculty" | "student";
+    name?: string;
+    email: string;
+    password: string;
+    title?: string;
+    department?: string;
+    roll_no?: string;
+}): Promise<AdminUserItem> {
+    const res = await fetch(`${BASE}/admin/users`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    return handleResponse<AdminUserItem>(res);
 }
 
 // ── Student ───────────────────────────────────────────────────────────────────

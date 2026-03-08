@@ -5,7 +5,7 @@ matching the logged-in student's name or roll number against parsed records.
 
 import statistics
 import app.core.database as _db
-from app.models.user import User
+from app.models.student_user import StudentUser
 from app.models.uploaded_file import UploadedFile
 from app.models.student_mark import StudentMark
 from sqlalchemy import func
@@ -25,7 +25,7 @@ def _normalize_roll_no_str(s: str) -> str:
 
 def _get_user(user_id: str) -> dict | None:
     with _db.SessionLocal() as db:
-        u = db.query(User).filter(User.id == user_id, User.role == "student").first()
+        u = db.query(StudentUser).filter(StudentUser.id == user_id).first()
         return u.to_dict() if u else None
 
 

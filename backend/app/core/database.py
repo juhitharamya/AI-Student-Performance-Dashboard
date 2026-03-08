@@ -56,7 +56,7 @@ def get_db() -> Session:
 def init_db() -> None:
     """Create all tables and seed demo accounts if the DB is empty."""
     # Import models so Base.metadata knows about them
-    from app.models import user, uploaded_file, student_mark  # noqa: F401
+    from app.models import admin_user, faculty_user, student_user, uploaded_file, student_mark, student_list_file, student_list_row  # noqa: F401
 
     if engine.dialect.name == "sqlite":
         Base.metadata.create_all(bind=engine)
@@ -78,31 +78,29 @@ def init_db() -> None:
 
 def _seed_demo_users() -> None:
     """Insert demo faculty + student accounts only if they don't exist yet."""
-    from app.models.user import User
+    from app.models.faculty_user import FacultyUser
+    from app.models.student_user import StudentUser
     from app.core.security import hash_password
-    import uuid
 
     with SessionLocal() as db:
-        if db.query(User).count() > 0:
+        if db.query(FacultyUser).count() > 0 or db.query(StudentUser).count() > 0:
             return   # already seeded
 
         demo_users = [
-            User(
+            FacultyUser(
                 id="u1",
                 name="Dr. Sarah Mitchell",
                 email="sarah@university.edu",
                 password=hash_password("faculty123"),
-                role="faculty",
                 title="Professor",
                 department="Computer Science",
                 avatar_initials="SM",
             ),
-            User(
+            StudentUser(
                 id="u2",
                 name="Alex Kumar",
                 email="alex@university.edu",
                 password=hash_password("student123"),
-                role="student",
                 roll_no="CS2023045",
                 cgpa=8.7,
                 year="3rd Year",
@@ -138,3 +136,25 @@ def _sqlite_migrate() -> None:
                 "WHERE uploaded_by_user_id IS NULL"
             )
         )
+
+        # Split legacy users table data into faculty_users/student_users if needed.
+        tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+        if "users" in tables:
+            conn.execute(
+                text(
+                    "INSERT INTO faculty_users (id, name, email, password, title, department, avatar_initials) "
+                    "SELECT u.id, u.name, u.email, u.password, u.title, u.department, u.avatar_initials "
+                    "FROM users u "
+                    "WHERE lower(ifnull(u.role, '')) = 'faculty' "
+                    "AND NOT EXISTS (SELECT 1 FROM faculty_users f WHERE f.id = u.id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO student_users (id, name, email, password, department, year, section, roll_no, cgpa, avatar_initials, attendance) "
+                    "SELECT u.id, u.name, u.email, u.password, u.department, u.year, u.section, u.roll_no, u.cgpa, u.avatar_initials, u.attendance "
+                    "FROM users u "
+                    "WHERE lower(ifnull(u.role, '')) = 'student' "
+                    "AND NOT EXISTS (SELECT 1 FROM student_users s WHERE s.id = u.id)"
+                )
+            )

@@ -10,7 +10,7 @@ import {
   LineChart, Line, PieChart, Pie, Cell, Legend
 } from "recharts";
 import * as api from "../api";
-import type { UploadedFile, FacultyStats, AnalyticsData, FilterOptions, SectionPerf, FileAnalysis, StudentListItem, UploadedFileMarkRow } from "../api";
+import type { UploadedFile, FacultyStats, AnalyticsData, FilterOptions, SectionPerf, FileAnalysis, StudentListItem, StudentListFile, UploadedFileMarkRow } from "../api";
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -121,6 +121,11 @@ export function FacultyDashboard() {
   const [studentDept, setStudentDept] = useState("");
   const [studentYear, setStudentYear] = useState("");
   const [studentSection, setStudentSection] = useState("");
+  const [studentListFile, setStudentListFile] = useState<StudentListFile | null>(null);
+  const [studentListUploading, setStudentListUploading] = useState(false);
+  const [studentListSaving, setStudentListSaving] = useState(false);
+  const [studentListDeleting, setStudentListDeleting] = useState(false);
+  const studentListFileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedFiles = files.filter((f) => f.selected);
   const totalCandidates = editColumns.filter((c) => /total|marks|overall|grand/i.test(c.trim().toLowerCase()));
@@ -138,23 +143,22 @@ export function FacultyDashboard() {
     ? editColumns.filter((c) => !totalCandidates.includes(c))
     : editColumns;
 
-  const loadStudentList = useCallback(async (fileIds?: string[]) => {
+  const loadStudentList = useCallback(async () => {
+    if (!studentListFile) {
+      setStudentList([]);
+      return;
+    }
     setStudentListLoading(true);
     setStudentListError("");
     try {
-      const rows = await api.getStudentList({
-        fileIds,
-        department: studentDept || undefined,
-        year: studentYear || undefined,
-        section: studentSection || undefined,
-      });
+      const rows = await api.getStudentListRows(studentListFile.id);
       setStudentList(rows);
     } catch (e: unknown) {
       setStudentListError(e instanceof Error ? e.message : "Failed to load student list");
     } finally {
       setStudentListLoading(false);
     }
-  }, [studentDept, studentYear, studentSection]);
+  }, [studentListFile]);
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -242,15 +246,27 @@ export function FacultyDashboard() {
   // ── Load filter options once ────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== "students") return;
-    const ids = selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined;
-    if (!ids && !studentDept && !studentYear && !studentSection) {
+    if (!studentDept || !studentYear || !studentSection) {
+      setStudentListFile(null);
       setStudentList([]);
       return;
     }
-    loadStudentList(ids);
-    // We intentionally only fetch on tab open; use the Refresh button after changing selection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, loadStudentList, selectedFiles.length, studentDept, studentYear, studentSection]);
+    (async () => {
+      setStudentListError("");
+      try {
+        const file = await api.getStudentListFile({ department: studentDept, year: studentYear, section: studentSection });
+        setStudentListFile(file);
+        if (file) {
+          const rows = await api.getStudentListRows(file.id);
+          setStudentList(rows);
+        } else {
+          setStudentList([]);
+        }
+      } catch (e: unknown) {
+        setStudentListError(e instanceof Error ? e.message : "Failed to load student list data");
+      }
+    })();
+  }, [activeTab, studentDept, studentYear, studentSection]);
 
   useEffect(() => {
     api.getFilterOptions().then(setFilterOptions).catch(() => { });
@@ -275,11 +291,16 @@ export function FacultyDashboard() {
 
   // ── File helpers ───────────────────────────────────────────────────────────
   const handleUploadFile = useCallback(async (file: File) => {
+    if (!testType) {
+      setUploadError("Select Test before uploading.");
+      return;
+    }
     setUploading(true);
     setUploadError("");
     try {
       const newFile = await api.uploadFile(file, {
         subject: subject || "General",
+        test_type: testType,
         department: department || "",
         year: year || "",
         section: section || "",
@@ -291,7 +312,7 @@ export function FacultyDashboard() {
     } finally {
       setUploading(false);
     }
-  }, [subject, department, year, section]);
+  }, [subject, testType, department, year, section]);
 
   const handleOpenFile = useCallback(async (file: SelectableFile) => {
     setViewingFile(file);
@@ -416,6 +437,58 @@ export function FacultyDashboard() {
     if (file) handleUploadFile(file);
     e.target.value = "";
   };
+
+  const handleStudentListUpload = useCallback(async (file: File) => {
+    if (!studentDept || !studentYear || !studentSection) {
+      setStudentListError("Select Department, Year, and Section before uploading student list.");
+      return;
+    }
+    setStudentListUploading(true);
+    setStudentListError("");
+    try {
+      const uploaded = await api.uploadStudentListFile(file, {
+        department: studentDept,
+        year: studentYear,
+        section: studentSection,
+      });
+      setStudentListFile(uploaded);
+      const rows = await api.getStudentListRows(uploaded.id);
+      setStudentList(rows);
+    } catch (e: unknown) {
+      setStudentListError(e instanceof Error ? e.message : "Failed to upload student list");
+    } finally {
+      setStudentListUploading(false);
+    }
+  }, [studentDept, studentYear, studentSection]);
+
+  const handleStudentListDelete = useCallback(async () => {
+    if (!studentListFile) return;
+    setStudentListDeleting(true);
+    setStudentListError("");
+    try {
+      await api.deleteStudentListFile(studentListFile.id);
+      setStudentListFile(null);
+      setStudentList([]);
+    } catch (e: unknown) {
+      setStudentListError(e instanceof Error ? e.message : "Failed to delete student list");
+    } finally {
+      setStudentListDeleting(false);
+    }
+  }, [studentListFile]);
+
+  const handleStudentListSave = useCallback(async () => {
+    if (!studentListFile) return;
+    setStudentListSaving(true);
+    setStudentListError("");
+    try {
+      const rows = await api.updateStudentListRows(studentListFile.id, studentList);
+      setStudentList(rows);
+    } catch (e: unknown) {
+      setStudentListError(e instanceof Error ? e.message : "Failed to save student list");
+    } finally {
+      setStudentListSaving(false);
+    }
+  }, [studentListFile, studentList]);
 
   const handleDelete = async (id: string) => {
     try {
@@ -714,7 +787,7 @@ export function FacultyDashboard() {
                   <SelectDropdown label="Year" value={year} onChange={setYear} options={filterOptions.years} />
                   <SelectDropdown label="Section" value={section} onChange={setSection} options={filterOptions.sections} />
                   <SelectDropdown label="Subject" value={subject} onChange={setSubject} options={filterOptions.subjects} />
-                  <SelectDropdown label="Test" value={testType} onChange={setTestType} options={filterOptions.test_types} />
+                  <SelectDropdown label="Test" value={testType} onChange={setTestType} options={filterOptions.test_types} includeAll={false} />
                 </div>
               </div>
 
@@ -1026,26 +1099,66 @@ export function FacultyDashboard() {
                   <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div>
                       <h3 className="text-foreground mb-1">Student List</h3>
-                      <p className="text-sm text-muted-foreground">Students and marks parsed from your uploaded documents.</p>
+                      <p className="text-sm text-muted-foreground">Upload and manage student master data (Roll No + Name) for selected Department/Year/Section.</p>
                     </div>
                     <button
-                      onClick={() => loadStudentList(selectedFiles.length > 0 ? selectedFiles.map((f) => f.id) : undefined)}
+                      onClick={() => loadStudentList()}
                       disabled={
                         studentListLoading ||
-                        (selectedFiles.length === 0 && !studentDept && !studentYear && !studentSection)
+                        !studentListFile
                       }
                       className="px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                     >
                       {studentListLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Refreshing…</> : "Refresh"}
                     </button>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-4">
-                    Tip: Select one or more files in <span className="text-foreground">Student Marks</span> to filter this list.
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-4">Tip: First choose Department, Year, and Section. Then upload one student list file for that combination.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                     <SelectDropdown label="Department" value={studentDept} onChange={setStudentDept} options={filterOptions.departments} includeAll={false} />
                     <SelectDropdown label="Year" value={studentYear} onChange={setStudentYear} options={filterOptions.years} includeAll={false} />
                     <SelectDropdown label="Section" value={studentSection} onChange={setStudentSection} options={filterOptions.sections} includeAll={false} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    {!studentListFile ? (
+                      <>
+                        <input
+                          ref={studentListFileInputRef}
+                          type="file"
+                          accept=".csv,.xlsx,.xls"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleStudentListUpload(file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <button
+                          onClick={() => studentListFileInputRef.current?.click()}
+                          disabled={studentListUploading || !studentDept || !studentYear || !studentSection}
+                          className="px-4 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          {studentListUploading ? "Uploading..." : "Upload Student List"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm text-muted-foreground">Current file: <span className="text-foreground">{studentListFile.name}</span></span>
+                        <button
+                          onClick={handleStudentListSave}
+                          disabled={studentListSaving || studentListDeleting}
+                          className="px-4 py-2 rounded-xl text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {studentListSaving ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={handleStudentListDelete}
+                          disabled={studentListDeleting || studentListSaving}
+                          className="px-4 py-2 rounded-xl text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {studentListDeleting ? "Deleting..." : "Delete"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1057,12 +1170,12 @@ export function FacultyDashboard() {
                   <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400">
                     <InboxIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                     <p className="text-sm mb-1">No student data yet</p>
-                    <p className="text-xs mb-4">Upload a CSV/XLSX marks sheet to populate the student list.</p>
+                    <p className="text-xs mb-4">Upload a CSV/XLSX student list for the selected Department/Year/Section.</p>
                     <button
-                      onClick={() => setActiveTab("upload")}
+                      onClick={() => studentListFileInputRef.current?.click()}
                       className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 transition-colors cursor-pointer"
                     >
-                      Go to Upload
+                      Upload Student List
                     </button>
                   </div>
                 ) : (
@@ -1077,28 +1190,35 @@ export function FacultyDashboard() {
                           <tr className="text-left text-gray-500 border-b">
                             <th className="py-3 pr-4 font-medium">Roll No</th>
                             <th className="py-3 pr-4 font-medium">Name</th>
-                            <th className="py-3 pr-4 font-medium">Subject</th>
-                            <th className="py-3 pr-4 font-medium">Marks</th>
-                            <th className="py-3 pr-4 font-medium">File</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {[...studentList]
                             .sort((a, b) => (a.roll_no ?? a.name).localeCompare(b.roll_no ?? b.name))
-                            .map((row) => {
-                              const fileName = files.find((f) => f.id === row.file_id)?.name ?? row.file_id;
-                              return (
-                                <tr key={`${row.file_id}:${row.roll_no ?? row.name}:${row.subject}`} className="hover:bg-gray-50">
-                                  <td className="py-3 pr-4 text-foreground">{row.roll_no ?? "—"}</td>
-                                  <td className="py-3 pr-4 text-foreground">{row.name}</td>
-                                  <td className="py-3 pr-4">
-                                    <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{row.subject}</span>
-                                  </td>
-                                  <td className="py-3 pr-4 text-foreground">{Number.isFinite(row.marks) ? Math.round(row.marks) : row.marks}</td>
-                                  <td className="py-3 pr-4 text-muted-foreground truncate max-w-[240px]">{fileName}</td>
-                                </tr>
-                              );
-                            })}
+                            .map((row) => (
+                              <tr key={row.id} className="hover:bg-gray-50">
+                                <td className="py-3 pr-4">
+                                  <input
+                                    value={row.roll_no ?? ""}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setStudentList((prev) => prev.map((it) => (it.id === row.id ? { ...it, roll_no: value } : it)));
+                                    }}
+                                    className="w-full min-w-[180px] px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                  />
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <input
+                                    value={row.name}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setStudentList((prev) => prev.map((it) => (it.id === row.id ? { ...it, name: value } : it)));
+                                    }}
+                                    className="w-full min-w-[260px] px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
@@ -1444,3 +1564,4 @@ export function FacultyDashboard() {
     </div >
   );
 }
+

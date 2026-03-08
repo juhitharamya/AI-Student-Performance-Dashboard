@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.routers import auth, faculty, student
+from app.routers import admin, auth, faculty, student
 
 
 @asynccontextmanager
@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
 
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(auth.router,    prefix="/api/v1")
+    app.include_router(admin.router,   prefix="/api/v1")
     app.include_router(faculty.router, prefix="/api/v1")
     app.include_router(student.router, prefix="/api/v1")
 

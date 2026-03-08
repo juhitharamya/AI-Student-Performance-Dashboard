@@ -103,11 +103,23 @@ class AnalyticsData(BaseModel):
 # ── Student list ─────────────────────────────────────────────────────────────
 
 class StudentListItem(BaseModel):
-    file_id: str
-    subject: str
+    id: str
     name: str
     roll_no: str = ""
-    marks: float
+
+
+class StudentListFile(BaseModel):
+    id: str
+    name: str
+    date: str
+    department: str = ""
+    year: str = ""
+    section: str = ""
+    size: str
+
+
+class UpdateStudentListRequest(BaseModel):
+    rows: list[StudentListItem]
 
 
 # ── Editable marks ────────────────────────────────────────────────────────────

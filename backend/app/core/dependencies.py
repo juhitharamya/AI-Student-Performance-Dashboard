@@ -31,6 +31,7 @@ def get_current_user(
         )
 
     user_id: str | None = payload.get("sub")
+    role: str | None = payload.get("role")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -40,7 +41,7 @@ def get_current_user(
 
     # Query the database (not the old in-memory list)
     from app.services.auth_service import get_user_by_id
-    user = get_user_by_id(user_id)
+    user = get_user_by_id(user_id, role=role)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -67,5 +68,15 @@ def require_student(current_user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted to student accounts.",
+        )
+    return current_user
+
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """Guard decorator — only allows users with role == 'admin'."""
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to admin accounts.",
         )
     return current_user

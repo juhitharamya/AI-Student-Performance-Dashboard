@@ -21,7 +21,7 @@ class UploadedFile(Base):
     file_path  = Column(String, nullable=False)        # absolute path on disk
     uploaded_by_user_id = Column(
         String,
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("faculty_users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

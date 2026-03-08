@@ -9,6 +9,8 @@ from app.schemas.faculty import (
     FileAnalysis,
     FilterOptions,
     StudentListItem,
+    StudentListFile,
+    UpdateStudentListRequest,
     UploadedFileMarkRow,
     UploadedFileMarksResponse,
     UpdateUploadedFileMarksRequest,
@@ -68,6 +70,7 @@ def upload_file(
     current_user: dict = Depends(require_faculty),
     file: UploadFile = File(..., description="CSV or XLSX file to upload"),
     subject: str = Form("General", description="Subject the file belongs to"),
+    test_type: str = Form(..., description="Test type (e.g. MID-1, MID-2, Slip Test)"),
     department: str = Form("", description="Department (e.g. CSM)"),
     year: str = Form("", description="Year (e.g. 2nd Year)"),
     section: str = Form("", description="Section (e.g. Section A)"),
@@ -80,6 +83,7 @@ def upload_file(
     return faculty_service.add_file(
         file,
         subject,
+        test_type,
         department,
         year,
         section,
@@ -207,7 +211,6 @@ def list_students(
     department: str | None = None,
     year: str | None = None,
     section: str | None = None,
-    test_type: str | None = None,
 ) -> list[StudentListItem]:
     return faculty_service.get_student_list(
         current_user["id"],
@@ -215,5 +218,64 @@ def list_students(
         department=department,
         year=year,
         section=section,
-        test_type=test_type,
     )
+
+
+@router.get(
+    "/student-list/file",
+    response_model=StudentListFile | None,
+    summary="Get student list file for selected Department/Year/Section",
+)
+def get_student_list_file(
+    current_user: dict = Depends(require_faculty),
+    department: str = Query(...),
+    year: str = Query(...),
+    section: str = Query(...),
+) -> StudentListFile | None:
+    return faculty_service.get_student_list_file(current_user["id"], department, year, section)
+
+
+@router.post(
+    "/student-list/upload",
+    response_model=StudentListFile,
+    status_code=201,
+    summary="Upload student list (Roll No + Name) for selected Department/Year/Section",
+)
+def upload_student_list(
+    current_user: dict = Depends(require_faculty),
+    file: UploadFile = File(...),
+    department: str = Form(...),
+    year: str = Form(...),
+    section: str = Form(...),
+) -> StudentListFile:
+    return faculty_service.upload_student_list_file(file, department, year, section, current_user["id"])
+
+
+@router.get(
+    "/student-list/file/{file_id}/rows",
+    response_model=list[StudentListItem],
+    summary="Get editable student list rows",
+)
+def get_student_list_rows(file_id: str, current_user: dict = Depends(require_faculty)) -> list[StudentListItem]:
+    return faculty_service.get_student_list_rows(file_id, current_user["id"])
+
+
+@router.put(
+    "/student-list/file/{file_id}/rows",
+    response_model=list[StudentListItem],
+    summary="Update student list rows",
+)
+def update_student_list_rows(
+    file_id: str,
+    body: UpdateStudentListRequest,
+    current_user: dict = Depends(require_faculty),
+) -> list[StudentListItem]:
+    return faculty_service.update_student_list_rows(file_id, current_user["id"], [r.model_dump() for r in body.rows])
+
+
+@router.delete(
+    "/student-list/file/{file_id}",
+    summary="Delete student list file",
+)
+def delete_student_list_file(file_id: str, current_user: dict = Depends(require_faculty)) -> dict:
+    return faculty_service.delete_student_list_file(file_id, current_user["id"])

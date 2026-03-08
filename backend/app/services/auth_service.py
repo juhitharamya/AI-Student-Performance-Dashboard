@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 import app.core.database as _db
 from app.core.security import verify_password, create_access_token, hash_password
-from app.models.user import User
+from app.models.admin_user import AdminUser
+from app.models.faculty_user import FacultyUser
+from app.models.student_user import StudentUser
 from app.schemas.auth import RegisterRequest
 
 
@@ -42,16 +44,13 @@ def _make_initials(name: str) -> str:
     return (name or "")[:2].upper() if name else "??"
 
 
-def _sync_student_profile_from_marks(db: Session, user: User) -> None:
+def _sync_student_profile_from_marks(db: Session, user: StudentUser) -> None:
     """
     Hydrate missing/placeholder student profile fields from uploaded marks.
 
     This makes the student dashboard show correct name/year/section/department
     without manual changes in Supabase.
     """
-    if user.role != "student":
-        return
-
     email_local = (user.email or "").split("@")[0]
     roll_candidates: list[str] = []
 
@@ -111,47 +110,24 @@ def authenticate_user(email: str, password: str, role: str) -> dict:
     """
     db = _get_db()
     try:
-        user = db.query(User).filter(
-            User.email == email.lower(),
-            User.role == role,
-        ).first()
+        if role == "admin":
+            user = db.query(AdminUser).filter(AdminUser.email == email.lower()).first()
+        elif role == "faculty":
+            user = db.query(FacultyUser).filter(FacultyUser.email == email.lower()).first()
+        elif role == "student":
+            user = db.query(StudentUser).filter(StudentUser.email == email.lower()).first()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Role must be one of 'admin', 'faculty', or 'student'.",
+            )
 
         if user is None:
-            # Auto-create a new account
-            email_local = email.split("@")[0]
-            parts = email_local.replace(".", " ").replace("_", " ").split()
-            name = " ".join(p.capitalize() for p in parts) if parts else email_local.capitalize()
-            initials = (name[0] + name[-1]).upper() if len(name) >= 2 else name[:2].upper()
-
-            new_user = User(
-                id=f"u{uuid.uuid4().hex[:8]}",
-                name=name,
-                email=email.lower(),
-                password=hash_password(password),
-                role=role,
-                avatar_initials=initials,
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account not found. Contact admin for access.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-            if role == "student":
-                new_user.roll_no   = (
-                    email_local.strip()
-                    if _looks_like_roll_no(email_local)
-                    else f"STU{uuid.uuid4().hex[:6].upper()}"
-                )
-                new_user.cgpa      = 0.0
-                new_user.year      = "1st Year"
-                new_user.section   = "Section A"
-                new_user.department = "General"
-            else:
-                new_user.title      = "Lecturer"
-                new_user.department = "General"
-
-            db.add(new_user)
-            db.commit()
-            db.refresh(new_user)
-            _sync_student_profile_from_marks(db, new_user)
-            db.commit()
-            db.refresh(new_user)
-            return new_user.to_dict()
 
         # Existing user — verify password
         if not verify_password(password, user.password):
@@ -160,9 +136,10 @@ def authenticate_user(email: str, password: str, role: str) -> dict:
                 detail="Incorrect password.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        _sync_student_profile_from_marks(db, user)
-        db.commit()
-        db.refresh(user)
+        if role == "student":
+            _sync_student_profile_from_marks(db, user)
+            db.commit()
+            db.refresh(user)
         return user.to_dict()
     finally:
         db.close()
@@ -170,15 +147,22 @@ def authenticate_user(email: str, password: str, role: str) -> dict:
 
 def register_user(body: RegisterRequest) -> dict:
     """
-    Create a new user account and return a ready-to-use JWT.
-    Raises 409 if email+role already exists.
+    Create the initial admin account and return a ready-to-use JWT.
     """
     db = _get_db()
     try:
-        existing = db.query(User).filter(
-            User.email == body.email.lower(),
-            User.role == body.role,
-        ).first()
+        if body.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admin signup is allowed here.",
+            )
+        if db.query(AdminUser).count() > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Admin already exists. Please sign in.",
+            )
+
+        existing = db.query(AdminUser).filter(AdminUser.email == body.email.lower()).first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -190,34 +174,24 @@ def register_user(body: RegisterRequest) -> dict:
             (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else body.name[:2].upper()
         )
 
-        new_user = User(
-            id=f"u{uuid.uuid4().hex[:8]}",
+        new_user = AdminUser(
+            id=f"a{uuid.uuid4().hex[:8]}",
             name=body.name.strip(),
             email=body.email.lower(),
             password=hash_password(body.password),
-            role=body.role,
             avatar_initials=initials,
         )
-        if body.role == "student":
-            new_user.roll_no    = getattr(body, "roll_no", None) or f"STU{uuid.uuid4().hex[:6].upper()}"
-            new_user.cgpa       = 0.0
-            new_user.year       = getattr(body, "year", None) or "1st Year"
-            new_user.section    = getattr(body, "section", None) or "Section A"
-            new_user.department = getattr(body, "department", None) or "General"
-        else:
-            new_user.title      = getattr(body, "title", None) or "Lecturer"
-            new_user.department = getattr(body, "department", None) or "General"
 
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
 
-        token = create_access_token({"sub": new_user.id, "role": new_user.role})
+        token = create_access_token({"sub": new_user.id, "role": body.role})
         return {
             "id":             new_user.id,
             "name":           new_user.name,
             "email":          new_user.email,
-            "role":           new_user.role,
+            "role":           body.role,
             "avatar_initials": new_user.avatar_initials,
             "access_token":   token,
             "token_type":     "bearer",
@@ -237,11 +211,34 @@ def create_token_for_user(user: dict) -> dict:
     }
 
 
-def get_user_by_id(user_id: str) -> dict | None:
+def get_user_by_id(user_id: str, role: str | None = None) -> dict | None:
     db = _get_db()
     try:
-        u = db.query(User).filter(User.id == user_id).first()
-        return u.to_dict() if u else None
+        if role == "admin":
+            u = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+            return u.to_dict() if u else None
+        if role == "faculty":
+            u = db.query(FacultyUser).filter(FacultyUser.id == user_id).first()
+            return u.to_dict() if u else None
+        if role == "student":
+            u = db.query(StudentUser).filter(StudentUser.id == user_id).first()
+            return u.to_dict() if u else None
+        u_admin = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+        if u_admin:
+            return u_admin.to_dict()
+        u_fac = db.query(FacultyUser).filter(FacultyUser.id == user_id).first()
+        if u_fac:
+            return u_fac.to_dict()
+        u_stu = db.query(StudentUser).filter(StudentUser.id == user_id).first()
+        return u_stu.to_dict() if u_stu else None
+    finally:
+        db.close()
+
+
+def admin_exists() -> bool:
+    db = _get_db()
+    try:
+        return db.query(AdminUser).count() > 0
     finally:
         db.close()
 

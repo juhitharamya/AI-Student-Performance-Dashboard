@@ -26,6 +26,8 @@ import app.core.database as _db
 from app.core.database import UPLOAD_DIR
 from app.models.uploaded_file import UploadedFile
 from app.models.student_mark import StudentMark
+from app.models.student_list_file import StudentListFile
+from app.models.student_list_row import StudentListRow
 from app.core import data_store as db  # only for filter constants (DEPARTMENTS etc.)
 
 
@@ -150,36 +152,6 @@ def _dedupe_total_like_columns(columns: list[str]) -> list[str]:
             total_seen = True
         out.append(c)
     return out
-
-def _infer_test_type_from_names(filename: str, sheet_names: list[str] | None = None) -> str:
-    """
-    Infer assessment/test type from a filename and optional XLSX sheet names.
-
-    Examples:
-    - "FIOT_mid-1.xlsx" -> "MID-1"
-    - "DS MID 2 marks.xlsx" -> "MID-2"
-    - "SlipTest.xlsx" -> "Slip Test"
-    """
-    parts = [filename or ""]
-    if sheet_names:
-        parts.extend(sheet_names)
-    text = " ".join(p for p in parts if p).lower()
-    text = re.sub(r"[_\-]+", " ", text)
-
-    patterns: list[tuple[str, str]] = [
-        (r"\b(mid|midterm)\s*1\b|\bmid\s*-\s*1\b|\bmid1\b", "MID-1"),
-        (r"\b(mid|midterm)\s*2\b|\bmid\s*-\s*2\b|\bmid2\b", "MID-2"),
-        (r"\bslip\s*test\b|\bsliptest\b|\bslip\b", "Slip Test"),
-        (r"\bunit\s*test\b|\but\s*\d+\b|\bunit\s*\d+\b", "Unit Test"),
-        (r"\bquiz\b|\bquizzes\b", "Quiz"),
-        (r"\bassign(ment)?\b|\bassignment\b", "Assignment"),
-        (r"\blab\b|\bpractical\b", "Lab"),
-        (r"\bproject\b|\bmini\s*project\b", "Project"),
-    ]
-    for pat, label in patterns:
-        if re.search(pat, text):
-            return label
-    return "Other"
 
 def _is_numeric_col(col: str, rows: list[dict]) -> bool:
     vals = [rows[i].get(col) for i in range(min(20, len(rows)))]
@@ -676,6 +648,7 @@ def get_file_by_id(file_id: str, faculty_user_id: str) -> dict:
 def add_file(
     upload: UploadFile,
     subject: str,
+    test_type: str,
     department: str = "",
     year: str = "",
     section: str = "",
@@ -701,16 +674,9 @@ def add_file(
     # Write bytes to disk
     Path(file_path).write_bytes(content)
 
-    # Infer assessment/test type from filename/sheetname for filtering (MID-1/MID-2/Slip Test/etc.).
-    sheet_names: list[str] = []
-    if ext in {"xlsx", "xls"}:
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-            sheet_names = list(wb.sheetnames or [])
-        except Exception:
-            sheet_names = []
-    test_type = _infer_test_type_from_names(fname, sheet_names)
+    selected_test_type = (test_type or "").strip()
+    if not selected_test_type:
+        raise HTTPException(status_code=422, detail="Test type is required. Please select a test before uploading.")
 
     # Insert metadata + parsed marks into DB (single commit)
     with _db.SessionLocal() as session:
@@ -721,7 +687,7 @@ def add_file(
                 name=fname,
                 date=datetime.now().strftime("%b %d, %Y"),
                 subject=(subject or "General").strip() or "General",
-                test_type=test_type,
+                test_type=selected_test_type,
                 department=(department or "").strip(),
                 year=(year or "").strip(),
                 section=(section or "").strip(),
@@ -992,51 +958,256 @@ def get_student_list(
     department: str | None = None,
     year: str | None = None,
     section: str | None = None,
-    test_type: str | None = None,
 ) -> list[dict]:
-    """
-    Return a simple student list (name/roll/marks) for the faculty's uploaded files.
-
-    If file_ids is provided, it is scoped to those uploads (ownership enforced).
-    """
-    if file_ids:
-        for fid in file_ids:
-            get_file_by_id(fid, faculty_user_id)
+    # file_ids are ignored for dedicated student-list flow (kept for API compatibility).
+    _ = file_ids
 
     with _db.SessionLocal() as session:
         q = (
             session.query(
-                StudentMark.student_name,
-                StudentMark.roll_no,
-                StudentMark.marks,
-                UploadedFile.subject,
-                UploadedFile.id,
+                StudentListRow.id,
+                StudentListRow.student_name,
+                StudentListRow.roll_no,
             )
-            .join(UploadedFile, UploadedFile.id == StudentMark.uploaded_file_id)
-            .filter(UploadedFile.uploaded_by_user_id == faculty_user_id)
+            .join(StudentListFile, StudentListFile.id == StudentListRow.student_list_file_id)
+            .filter(StudentListFile.uploaded_by_user_id == faculty_user_id)
         )
-        if file_ids:
-            q = q.filter(StudentMark.uploaded_file_id.in_(file_ids))
         if department:
-            q = q.filter(UploadedFile.department == department)
+            q = q.filter(StudentListFile.department == department)
         if year:
-            q = q.filter(UploadedFile.year == year)
+            q = q.filter(StudentListFile.year == year)
         if section:
-            q = q.filter(UploadedFile.section == section)
-        if test_type:
-            q = q.filter(UploadedFile.test_type == test_type)
-
-        rows = q.order_by(UploadedFile.created_at.desc()).all()
+            q = q.filter(StudentListFile.section == section)
+        rows = q.order_by(StudentListRow.roll_no.asc().nulls_last(), StudentListRow.student_name.asc()).all()
         return [
             {
-                "file_id": file_id,
-                "subject": subject or "Unknown",
+                "id": row_id,
                 "name": (student_name or "").strip() or "Unknown",
                 "roll_no": (roll_no or "").strip(),
-                "marks": float(marks),
             }
-            for (student_name, roll_no, marks, subject, file_id) in rows
+            for (row_id, student_name, roll_no) in rows
         ]
+
+
+def _parse_student_list_rows(raw: bytes, filename: str) -> list[dict]:
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    rows: list[dict] = []
+    headers: list[str] = []
+    try:
+        if ext in ("xlsx", "xls"):
+            import openpyxl
+
+            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+            ws = wb.active
+            rows_raw = list(ws.iter_rows(values_only=True))
+            if not rows_raw:
+                return []
+            header_idx = _detect_header_row_index(rows_raw)
+            header_row = rows_raw[header_idx] if header_idx < len(rows_raw) else rows_raw[0]
+            headers = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(header_row)]
+            rows = [
+                dict(zip(headers, row))
+                for row in rows_raw[header_idx + 1 :]
+                if any(c is not None and str(c).strip() != "" for c in row)
+            ]
+        else:
+            text = raw.decode("utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            headers = list(reader.fieldnames or [])
+            if not rows:
+                reader2 = csv.DictReader(io.StringIO(text), delimiter=";")
+                rows = list(reader2)
+                headers = list(reader2.fieldnames or [])
+    except Exception:
+        return []
+
+    if not rows or not headers:
+        return []
+
+    name_col = next((c for c in headers if _is_name_col(c)), None)
+    roll_col = next((c for c in headers if _is_roll_col_high(c)), None) or next((c for c in headers if _is_roll_col(c)), None)
+    if not name_col:
+        name_col = headers[1] if len(headers) > 1 else headers[0]
+    if not roll_col and len(headers) > 1:
+        roll_col = headers[0]
+
+    out: list[dict] = []
+    for row in rows:
+        name = str(row.get(name_col, "")).strip()
+        if not name:
+            continue
+        roll = _normalize_roll_no(str(row.get(roll_col, "")).strip()) if roll_col else ""
+        out.append({"name": name, "roll_no": roll})
+    return out
+
+
+def get_student_list_file(faculty_user_id: str, department: str, year: str, section: str) -> dict | None:
+    with _db.SessionLocal() as session:
+        rec = (
+            session.query(StudentListFile)
+            .filter(
+                StudentListFile.uploaded_by_user_id == faculty_user_id,
+                StudentListFile.department == department,
+                StudentListFile.year == year,
+                StudentListFile.section == section,
+            )
+            .order_by(StudentListFile.created_at.desc())
+            .first()
+        )
+        return rec.to_dict() if rec else None
+
+
+def upload_student_list_file(
+    upload: UploadFile,
+    department: str,
+    year: str,
+    section: str,
+    faculty_user_id: str,
+) -> dict:
+    department = (department or "").strip()
+    year = (year or "").strip()
+    section = (section or "").strip()
+    if not department or not year or not section:
+        raise HTTPException(status_code=422, detail="Department, Year, and Section are required.")
+
+    fname = upload.filename or f"student_list_{uuid.uuid4().hex[:8]}.csv"
+    ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+    if ext not in {"csv", "xlsx", "xls"}:
+        raise HTTPException(status_code=400, detail="Student list supports only CSV/XLSX.")
+
+    content = upload.file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty.")
+    rows = _parse_student_list_rows(content, fname)
+    if not rows:
+        raise HTTPException(status_code=422, detail="Could not parse student list. Need Roll No and Name columns.")
+
+    with _db.SessionLocal() as session:
+        existing = (
+            session.query(StudentListFile)
+            .filter(
+                StudentListFile.uploaded_by_user_id == faculty_user_id,
+                StudentListFile.department == department,
+                StudentListFile.year == year,
+                StudentListFile.section == section,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Student list already exists for this Department/Year/Section. Delete it before uploading a new one.")
+
+        file_id = str(uuid.uuid4())
+        safe_name = f"{file_id}_{fname}"
+        student_list_dir = UPLOAD_DIR / "student_lists"
+        student_list_dir.mkdir(parents=True, exist_ok=True)
+        file_path = str(student_list_dir / safe_name)
+        Path(file_path).write_bytes(content)
+
+        size_bytes = len(content)
+        size_label = (
+            f"{size_bytes / (1024 * 1024):.1f} MB" if size_bytes >= 1_048_576
+            else f"{size_bytes // 1024} KB" if size_bytes >= 1024
+            else f"{size_bytes} B"
+        )
+        now = datetime.now(timezone.utc)
+        rec = StudentListFile(
+            id=file_id,
+            name=fname,
+            date=datetime.now().strftime("%b %d, %Y"),
+            department=department,
+            year=year,
+            section=section,
+            size=size_label,
+            file_path=file_path,
+            uploaded_by_user_id=faculty_user_id,
+            created_at=now,
+        )
+        session.add(rec)
+        session.flush()
+        session.add_all(
+            [
+                StudentListRow(
+                    id=str(uuid.uuid4()),
+                    student_list_file_id=file_id,
+                    roll_no=(r.get("roll_no") or "").strip(),
+                    student_name=(r.get("name") or "").strip() or "Unknown",
+                )
+                for r in rows
+            ]
+        )
+        session.commit()
+        return rec.to_dict()
+
+
+def get_student_list_rows(file_id: str, faculty_user_id: str) -> list[dict]:
+    with _db.SessionLocal() as session:
+        rec = (
+            session.query(StudentListFile)
+            .filter(StudentListFile.id == file_id, StudentListFile.uploaded_by_user_id == faculty_user_id)
+            .first()
+        )
+        if not rec:
+            raise HTTPException(status_code=404, detail="Student list file not found.")
+        rows = (
+            session.query(StudentListRow.id, StudentListRow.student_name, StudentListRow.roll_no)
+            .filter(StudentListRow.student_list_file_id == file_id)
+            .order_by(StudentListRow.roll_no.asc().nulls_last(), StudentListRow.student_name.asc())
+            .all()
+        )
+        return [{"id": rid, "name": name or "Unknown", "roll_no": (roll_no or "").strip()} for (rid, name, roll_no) in rows]
+
+
+def update_student_list_rows(file_id: str, faculty_user_id: str, rows: list[dict]) -> list[dict]:
+    if not rows:
+        raise HTTPException(status_code=422, detail="No rows provided.")
+    with _db.SessionLocal() as session:
+        rec = (
+            session.query(StudentListFile)
+            .filter(StudentListFile.id == file_id, StudentListFile.uploaded_by_user_id == faculty_user_id)
+            .first()
+        )
+        if not rec:
+            raise HTTPException(status_code=404, detail="Student list file not found.")
+
+        session.query(StudentListRow).filter(StudentListRow.student_list_file_id == file_id).delete(synchronize_session=False)
+        to_add: list[StudentListRow] = []
+        for row in rows:
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+            to_add.append(
+                StudentListRow(
+                    id=str(uuid.uuid4()),
+                    student_list_file_id=file_id,
+                    roll_no=_normalize_roll_no((row.get("roll_no") or "").strip()),
+                    student_name=name,
+                )
+            )
+        if not to_add:
+            raise HTTPException(status_code=422, detail="At least one valid student row is required.")
+        session.add_all(to_add)
+        session.commit()
+    return get_student_list_rows(file_id, faculty_user_id)
+
+
+def delete_student_list_file(file_id: str, faculty_user_id: str) -> dict:
+    with _db.SessionLocal() as session:
+        rec = (
+            session.query(StudentListFile)
+            .filter(StudentListFile.id == file_id, StudentListFile.uploaded_by_user_id == faculty_user_id)
+            .first()
+        )
+        if not rec:
+            raise HTTPException(status_code=404, detail="Student list file not found.")
+        try:
+            os.unlink(rec.file_path)
+        except FileNotFoundError:
+            pass
+        session.query(StudentListRow).filter(StudentListRow.student_list_file_id == file_id).delete(synchronize_session=False)
+        session.delete(rec)
+        session.commit()
+    return {"message": "Student list deleted successfully."}
 
 
 def _loads_components(value: str | None) -> dict[str, float | None]:
