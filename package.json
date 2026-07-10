@@ -1,0 +1,12 @@
+{
+  "name": "ai-student-performance-dashboard-root",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "node dev.mjs",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "python backend/main.py",
+    "install:frontend": "npm --prefix frontend install --legacy-peer-deps",
+    "build:frontend": "npm --prefix frontend run build"
+  }
+}
