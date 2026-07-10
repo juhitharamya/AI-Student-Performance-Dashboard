@@ -127,6 +127,8 @@ def _sqlite_migrate() -> None:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN created_at DATETIME"))
         if "uploaded_by_user_id" not in cols:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN uploaded_by_user_id TEXT"))
+        if "test_type" not in cols:
+            conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN test_type TEXT"))
         # Backfill for pre-existing rows so ordering works.
         conn.execute(text("UPDATE uploaded_files SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
         # Backfill legacy uploads to demo faculty if present (keeps dev UX sane).
@@ -136,6 +138,10 @@ def _sqlite_migrate() -> None:
                 "WHERE uploaded_by_user_id IS NULL"
             )
         )
+
+        cols_marks = [r[1] for r in conn.execute(text("PRAGMA table_info(student_marks)")).fetchall()]
+        if "components_json" not in cols_marks:
+            conn.execute(text("ALTER TABLE student_marks ADD COLUMN components_json TEXT"))
 
         # Split legacy users table data into faculty_users/student_users if needed.
         tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
