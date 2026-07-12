@@ -70,7 +70,7 @@ def upload_file(
     current_user: dict = Depends(require_faculty),
     file: UploadFile = File(..., description="CSV or XLSX file to upload"),
     subject: str = Form("General", description="Subject the file belongs to"),
-    test_type: str = Form(..., description="Test type (e.g. MID-1, MID-2, Slip Test)"),
+    test_type: str = Form("", description="Test type (e.g. MID-1, MID-2, Slip Test)"),
     department: str = Form("", description="Department (e.g. CSM)"),
     year: str = Form("", description="Year (e.g. 2nd Year)"),
     section: str = Form("", description="Section (e.g. Section A)"),

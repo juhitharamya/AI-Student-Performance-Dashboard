@@ -123,19 +123,55 @@ def authenticate_user(email: str, password: str, role: str) -> dict:
             )
 
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Account not found. Contact admin for access.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            if role == "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Account not found. Contact admin for access.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-        # Existing user — verify password
-        if not verify_password(password, user.password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            # Auto-create a new account on first login with any email
+            email_local = email.split("@")[0]
+            parts = email_local.replace(".", " ").replace("_", " ").split()
+            name = " ".join(p.capitalize() for p in parts) if parts else email_local.capitalize()
+            initials = (name[0] + name[-1]).upper() if len(name) >= 2 else name[:2].upper()
+
+            if role == "faculty":
+                user = FacultyUser(
+                    id=f"f{uuid.uuid4().hex[:8]}",
+                    name=name,
+                    email=email.lower(),
+                    password=hash_password(password),
+                    title="Lecturer",
+                    department="General",
+                    avatar_initials=initials,
+                )
+            else:  # student
+                user = StudentUser(
+                    id=f"s{uuid.uuid4().hex[:8]}",
+                    name=name,
+                    email=email.lower(),
+                    password=hash_password(password),
+                    roll_no=f"STU{uuid.uuid4().hex[:6].upper()}",
+                    year="1st Year",
+                    section="Section A",
+                    department="General",
+                    cgpa=0.0,
+                    avatar_initials=initials,
+                    attendance="—",
+                )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            # Existing user — verify password
+            if not verify_password(password, user.password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect password.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
         if role == "student":
             _sync_student_profile_from_marks(db, user)
             db.commit()
@@ -147,51 +183,97 @@ def authenticate_user(email: str, password: str, role: str) -> dict:
 
 def register_user(body: RegisterRequest) -> dict:
     """
-    Create the initial admin account and return a ready-to-use JWT.
+    Create a new user account (admin, faculty, or student) and return a ready-to-use JWT.
     """
     db = _get_db()
     try:
-        if body.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admin signup is allowed here.",
+        email = body.email.lower()
+        role = body.role
+
+        if role == "admin":
+            if db.query(AdminUser).count() > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Admin already exists. Please sign in.",
+                )
+            existing = db.query(AdminUser).filter(AdminUser.email == email).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"An account with this email already exists for role '{role}'.",
+                )
+            parts = body.name.strip().split()
+            initials = (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else body.name[:2].upper()
+            new_user = AdminUser(
+                id=f"a{uuid.uuid4().hex[:8]}",
+                name=body.name.strip(),
+                email=email,
+                password=hash_password(body.password),
+                avatar_initials=initials,
             )
-        if db.query(AdminUser).count() > 0:
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+
+        elif role == "faculty":
+            existing = db.query(FacultyUser).filter(FacultyUser.email == email).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"An account with this email already exists for role '{role}'.",
+                )
+            parts = body.name.strip().split()
+            initials = (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else body.name[:2].upper()
+            new_user = FacultyUser(
+                id=f"f{uuid.uuid4().hex[:8]}",
+                name=body.name.strip(),
+                email=email,
+                password=hash_password(body.password),
+                title=(body.title or "Lecturer").strip(),
+                department=(body.department or "General").strip(),
+                avatar_initials=initials,
+            )
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+
+        elif role == "student":
+            existing = db.query(StudentUser).filter(StudentUser.email == email).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"An account with this email already exists for role '{role}'.",
+                )
+            parts = body.name.strip().split()
+            initials = (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else body.name[:2].upper()
+            new_user = StudentUser(
+                id=f"s{uuid.uuid4().hex[:8]}",
+                name=body.name.strip(),
+                email=email,
+                password=hash_password(body.password),
+                roll_no=(body.roll_no or f"STU{uuid.uuid4().hex[:6].upper()}").strip(),
+                year=(body.year or "").strip(),
+                section=(body.section or "").strip(),
+                department=(body.department or "General").strip(),
+                cgpa=0.0,
+                avatar_initials=initials,
+                attendance="—",
+            )
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+        else:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Admin already exists. Please sign in.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Role must be one of 'admin', 'faculty', or 'student'.",
             )
 
-        existing = db.query(AdminUser).filter(AdminUser.email == body.email.lower()).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"An account with this email already exists for role '{body.role}'.",
-            )
-
-        parts = body.name.strip().split()
-        initials = (
-            (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else body.name[:2].upper()
-        )
-
-        new_user = AdminUser(
-            id=f"a{uuid.uuid4().hex[:8]}",
-            name=body.name.strip(),
-            email=body.email.lower(),
-            password=hash_password(body.password),
-            avatar_initials=initials,
-        )
-
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-
-        token = create_access_token({"sub": new_user.id, "role": body.role})
+        token = create_access_token({"sub": new_user.id, "role": role})
         return {
             "id":             new_user.id,
             "name":           new_user.name,
             "email":          new_user.email,
-            "role":           body.role,
+            "role":           role,
             "avatar_initials": new_user.avatar_initials,
             "access_token":   token,
             "token_type":     "bearer",

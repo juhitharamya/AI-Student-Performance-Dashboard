@@ -1,0 +1,529 @@
+﻿.\.venv313\Scripts\python.exe : 
+C:\Users\ssred\projects\AI Student 
+Performance Dashboard\backend\.venv313\
+Lib\site-packages\pytest_asyncio\plugin
+.py:207: PytestDeprecationWarning: The 
+configuration option 
+"asyncio_default_fixture_loop_scope" 
+is unset.
+At line:1 char:13
++ cd backend; 
+.\.venv313\Scripts\python.exe -m 
+pytest tests/ -q --tb=sh ...
++             ~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpeci 
+   fied: (C:\Users\ssred\...cope" is   
+  unset.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCo 
+   mmandError
+ 
+The event loop scope for asynchronous 
+fixtures will default to the fixture 
+caching scope. Future versions of 
+pytest-asyncio will default the loop 
+scope for asynchronous fixtures to 
+function scope. Set the default 
+fixture loop scope explicitly in order 
+to avoid unexpected behavior in the 
+future. Valid fixture loop scopes are: 
+"function", "class", "module", 
+"package", "session"
+
+  warnings.warn(PytestDeprecationWarnin
+g(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.....F...................FFFFF..F..........                              [100%]
+================================== FAILURES ===================================
+_______________________ TestMe.test_me_with_valid_token _______________________
+tests\test_auth.py:73: in test_me_with_valid_token
+    res = client.get(f"{BASE}/me", headers=faculty_headers)
+.venv313\Lib\site-packages\starlette\testclient.py:514: in get
+    return super().get(
+.venv313\Lib\site-packages\httpx\_client.py:1053: in get
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:301: in app
+    raw_response = await run_endpoint_function(
+.venv313\Lib\site-packages\fastapi\routing.py:214: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+.venv313\Lib\site-packages\starlette\concurrency.py:39: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func, *args)
+.venv313\Lib\site-packages\anyio\to_thread.py:63: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+.venv313\Lib\site-packages\anyio\_backends\_asyncio.py:2502: in run_sync_in_worker_thread
+    return await future
+.venv313\Lib\site-packages\anyio\_backends\_asyncio.py:986: in run
+    result = context.run(func, *args)
+app\routers\auth.py:63: in me
+    return auth_service.get_me(current_user)
+E   AttributeError: module 'app.services.auth_service' has no attribute 'get_me'
+_________________ TestRegister.test_register_student_success __________________
+tests\test_register.py:13: in test_register_student_success
+    res = client.post(f"{BASE}/register", json={
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1M2Y1ZDM1NGMiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NH0.sdsd-Rr7JtlZLihF6RhcPnld3Isg8iCsSsOUXyxkwM8', 'token_type': 'bearer', 'role': 'student', 'name': 'Jane Doe', 'avatar_initials': 'JD'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1M2Y1ZDM1NGMiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NH0.sdsd-Rr7JtlZLihF6RhcPnld3Isg8iCsSsOUXyxkwM8', 'token_type': 'bearer', 'role': 'student', 'name': 'Jane Doe', 'avatar_initials': 'JD'}}
+_________________ TestRegister.test_register_faculty_success __________________
+tests\test_register.py:29: in test_register_faculty_success
+    res = client.post(f"{BASE}/register", json={
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1N2U3OTkzMjIiLCJyb2xlIjoiZmFjdWx0eSIsImV4cCI6MTc3MjY1MDY3NH0.9kjSBIf2kUw22sikcwzEbPc9IxvRVuI4_m5fuDkBl5g', 'token_type': 'bearer', 'role': 'faculty', 'name': 'Prof. Alan Grant', 'avatar_initials': 'PG'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1N2U3OTkzMjIiLCJyb2xlIjoiZmFjdWx0eSIsImV4cCI6MTc3MjY1MDY3NH0.9kjSBIf2kUw22sikcwzEbPc9IxvRVuI4_m5fuDkBl5g', 'token_type': 'bearer', 'role': 'faculty', 'name': 'Prof. Alan Grant', 'avatar_initials': 'PG'}}
+____________________ TestRegister.test_register_then_login ____________________
+tests\test_register.py:44: in test_register_then_login
+    reg = client.post(f"{BASE}/register", json={
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1ZDY5ZmI1YzUiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NX0.Qa64nUoG1q8GE5lRlCaPbVIN2X8LhEMyWSVIP0u_AXI', 'token_type': 'bearer', 'role': 'student', 'name': 'Test User', 'avatar_initials': 'TU'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1ZDY5ZmI1YzUiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NX0.Qa64nUoG1q8GE5lRlCaPbVIN2X8LhEMyWSVIP0u_AXI', 'token_type': 'bearer', 'role': 'student', 'name': 'Test User', 'avatar_initials': 'TU'}}
+____________ TestRegister.test_register_duplicate_email_same_role _____________
+tests\test_register.py:68: in test_register_duplicate_email_same_role
+    first = client.post(f"{BASE}/register", json=payload)
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1NzFjMmNiNDYiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NX0.vbtZvnZ7mtJxvGnRyCksvrAct9KpIiehn5aTSeD9YOY', 'token_type': 'bearer', 'role': 'student', 'name': 'Dup User', 'avatar_initials': 'DU'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1NzFjMmNiNDYiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3NX0.vbtZvnZ7mtJxvGnRyCksvrAct9KpIiehn5aTSeD9YOY', 'token_type': 'bearer', 'role': 'student', 'name': 'Dup User', 'avatar_initials': 'DU'}}
+________ TestRegister.test_register_same_email_different_role_allowed _________
+tests\test_register.py:77: in test_register_same_email_different_role_allowed
+    r1 = client.post(f"{BASE}/register", json={
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1YjVjYzhkMjYiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3Nn0.rhSxH6dyi6kA9bxrk_F-3ks-_8wibHxpYaSVUiuhrN4', 'token_type': 'bearer', 'role': 'student', 'name': 'Dual Role', 'avatar_initials': 'DR'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1YjVjYzhkMjYiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3Nn0.rhSxH6dyi6kA9bxrk_F-3ks-_8wibHxpYaSVUiuhrN4', 'token_type': 'bearer', 'role': 'student', 'name': 'Dual Role', 'avatar_initials': 'DR'}}
+_______ TestRegister.test_registered_user_can_access_protected_endpoint _______
+tests\test_register.py:115: in test_registered_user_can_access_protected_endpoint
+    reg = client.post(f"{BASE}/register", json={
+.venv313\Lib\site-packages\starlette\testclient.py:593: in post
+    return super().post(
+.venv313\Lib\site-packages\httpx\_client.py:1144: in post
+    return self.request(
+.venv313\Lib\site-packages\starlette\testclient.py:484: in request
+    return super().request(
+.venv313\Lib\site-packages\httpx\_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+.venv313\Lib\site-packages\httpx\_client.py:914: in send
+    response = self._send_handling_auth(
+.venv313\Lib\site-packages\httpx\_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv313\Lib\site-packages\httpx\_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+.venv313\Lib\site-packages\httpx\_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+.venv313\Lib\site-packages\starlette\testclient.py:377: in handle_request
+    raise exc
+.venv313\Lib\site-packages\starlette\testclient.py:374: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv313\Lib\site-packages\anyio\from_thread.py:334: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+.venv313\Lib\site-packages\anyio\from_thread.py:259: in _call_func
+    retval = await retval_or_awaitable
+.venv313\Lib\site-packages\fastapi\applications.py:1054: in __call__
+    await super().__call__(scope, receive, send)
+.venv313\Lib\site-packages\starlette\applications.py:113: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\errors.py:187: in __call__
+    raise exc
+.venv313\Lib\site-packages\starlette\middleware\errors.py:165: in __call__
+    await self.app(scope, receive, _send)
+.venv313\Lib\site-packages\starlette\middleware\cors.py:85: in __call__
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\middleware\exceptions.py:62: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:715: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:735: in app
+    await route.handle(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:288: in handle
+    await self.app(scope, receive, send)
+.venv313\Lib\site-packages\starlette\routing.py:76: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv313\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv313\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv313\Lib\site-packages\starlette\routing.py:73: in app
+    response = await f(request)
+.venv313\Lib\site-packages\fastapi\routing.py:327: in app
+    content = await serialize_response(
+.venv313\Lib\site-packages\fastapi\routing.py:176: in serialize_response
+    raise ResponseValidationError(
+E   fastapi.exceptions.ResponseValidationError: 2 validation errors:
+E     {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1YjE2MTkzMjUiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3Nn0.cSN3kdbyKxUxuJ5psX9Qm0CrqAsGnRTsDWZODMPNTjc', 'token_type': 'bearer', 'role': 'student', 'name': 'Secure Test', 'avatar_initials': 'ST'}}
+E     {'type': 'missing', 'loc': ('response', 'email'), 'msg': 'Field required', 'input': {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1YjE2MTkzMjUiLCJyb2xlIjoic3R1ZGVudCIsImV4cCI6MTc3MjY1MDY3Nn0.cSN3kdbyKxUxuJ5psX9Qm0CrqAsGnRTsDWZODMPNTjc', 'token_type': 'bearer', 'role': 'student', 'name': 'Secure Test', 'avatar_initials': 'ST'}}
+=========================== short test summary info ===========================
+FAILED tests/test_auth.py::TestMe::test_me_with_valid_token - AttributeError:...
+FAILED tests/test_register.py::TestRegister::test_register_student_success - ...
+FAILED tests/test_register.py::TestRegister::test_register_faculty_success - ...
+FAILED tests/test_register.py::TestRegister::test_register_then_login - fasta...
+FAILED tests/test_register.py::TestRegister::test_register_duplicate_email_same_role
+FAILED tests/test_register.py::TestRegister::test_register_same_email_different_role_allowed
+FAILED tests/test_register.py::TestRegister::test_registered_user_can_access_protected_endpoint
+7 failed, 36 passed in 23.35s

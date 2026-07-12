@@ -9,11 +9,11 @@ from app.core.security import decode_access_token
 
 # ── Bearer-token extractor ────────────────────────────────────────────────────
 
-_bearer = HTTPBearer(auto_error=True)
+_bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
     """
     Validate the JWT from the Authorization header and return the user dict.
@@ -21,6 +21,13 @@ def get_current_user(
     Raises 401 if the token is missing, expired, or invalid.
     Raises 404 if the user encoded in the token no longer exists in the DB.
     """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     payload = decode_access_token(credentials.credentials)
 
     if payload is None:
@@ -49,7 +56,6 @@ def get_current_user(
         )
 
     return user
-
 
 
 def require_faculty(current_user: dict = Depends(get_current_user)) -> dict:

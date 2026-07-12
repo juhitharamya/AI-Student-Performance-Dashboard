@@ -674,9 +674,7 @@ def add_file(
     # Write bytes to disk
     Path(file_path).write_bytes(content)
 
-    selected_test_type = (test_type or "").strip()
-    if not selected_test_type:
-        raise HTTPException(status_code=422, detail="Test type is required. Please select a test before uploading.")
+    selected_test_type = (test_type or "Slip Test").strip()
 
     # Insert metadata + parsed marks into DB (single commit)
     with _db.SessionLocal() as session:

@@ -106,7 +106,7 @@ class TestRegister:
             "name": "Bad Role",
             "email": "badrole@test.com",
             "password": "password1",
-            "role": "admin",
+            "role": "unknown",
         })
         assert res.status_code == 422
 
