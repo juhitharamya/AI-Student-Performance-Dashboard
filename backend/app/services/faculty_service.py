@@ -1134,6 +1134,33 @@ def upload_student_list_file(
                 for r in rows
             ]
         )
+        
+        # Also update StudentUser profiles with real details from the student list
+        from sqlalchemy import func
+        from app.models.student_user import StudentUser
+        for r in rows:
+            roll = (r.get("roll_no") or "").strip()
+            name = (r.get("name") or "").strip()
+            if roll:
+                student = (
+                    session.query(StudentUser)
+                    .filter(
+                        (func.lower(StudentUser.roll_no) == roll.lower()) |
+                        (func.lower(StudentUser.email).like(f"{roll.lower()}@%"))
+                    )
+                    .first()
+                )
+                if student:
+                    if name:
+                        student.name = name
+                    student.roll_no = roll
+                    if year:
+                        student.year = year
+                    if section:
+                        student.section = section
+                    if department:
+                        student.department = department
+
         session.commit()
         return rec.to_dict()
 

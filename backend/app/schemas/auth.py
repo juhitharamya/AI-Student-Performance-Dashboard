@@ -95,6 +95,23 @@ class AdminUserCreateRequest(BaseModel):
         return v
 
 
+class AdminUserUpdateRequest(BaseModel):
+    role: str  # "faculty" | "student"
+    name: str | None = None
+    email: str | None = None
+    password: str | None = None
+    title: str | None = None
+    department: str | None = None
+    roll_no: str | None = None
+
+    @field_validator("role")
+    @classmethod
+    def role_must_be_faculty_or_student_update(cls, v: str) -> str:
+        if v not in ("faculty", "student"):
+            raise ValueError("role must be 'faculty' or 'student'")
+        return v
+
+
 class AdminUserItem(BaseModel):
     id: str
     name: str

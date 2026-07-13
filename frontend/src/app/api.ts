@@ -505,6 +505,34 @@ export async function createAdminUser(payload: {
     return handleResponse<AdminUserItem>(res);
 }
 
+export async function updateAdminUser(userId: string, payload: {
+    role: "faculty" | "student";
+    name?: string;
+    email?: string;
+    password?: string;
+    title?: string;
+    department?: string;
+    roll_no?: string;
+}): Promise<AdminUserItem> {
+    const res = await fetch(`${BASE}/admin/users/${userId}`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    return handleResponse<AdminUserItem>(res);
+}
+
+export async function deleteAdminUser(userId: string, role: "faculty" | "student"): Promise<void> {
+    const res = await fetch(`${BASE}/admin/users/${userId}?role=${role}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to delete user");
+    }
+}
+
 // ── Student ───────────────────────────────────────────────────────────────────
 
 export async function getStudentDashboard(): Promise<StudentDashboard> {

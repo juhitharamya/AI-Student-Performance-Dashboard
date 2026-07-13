@@ -102,38 +102,35 @@ def _predict_single(student_marks: list[dict]) -> dict:
     if len(scores) >= 4:
         try:
             import numpy as np
-            from sklearn.cluster import KMeans
+            from app.ml import KMeans
             X = np.array(scores, dtype=float).reshape(-1, 1)
             n_clusters = min(4, len(scores))
-            km = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+            km = KMeans(n_clusters=n_clusters)
             km.fit(X)
             centers = [float(c[0]) for c in km.cluster_centers_]
-            logger.debug("KMeans centers: %s", centers)
+            logger.debug("Custom KMeans centers: %s", centers)
         except Exception as e:
-            logger.warning("KMeans failed, using z-score fallback: %s", e)
+            logger.warning("Custom KMeans failed, using z-score fallback: %s", e)
 
     # Logistic Regression for pass/fail probability
     lr_probs: dict[str, float] = {}
     if len(scores) >= 5:
         try:
             import numpy as np
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.preprocessing import StandardScaler
+            from app.ml import LogisticRegression
             X = np.array(scores, dtype=float).reshape(-1, 1)
             y = [1 if s >= 40 else 0 for s in scores]
             if len(set(y)) > 1:  # need both classes
-                scaler = StandardScaler()
-                Xs = scaler.fit_transform(X)
-                clf = LogisticRegression(random_state=42, max_iter=500)
-                clf.fit(Xs, y)
-                proba = clf.predict_proba(Xs)[:, 1]
+                clf = LogisticRegression()
+                clf.fit(X, y)
+                proba = clf.predict_proba(X)
                 for i, m in enumerate(student_marks):
                     lr_probs[m["name"]] = round(float(proba[i]) * 100, 1)
-                logger.debug("Logistic Regression pass probabilities computed for %d students", len(lr_probs))
+                logger.debug("Custom Logistic Regression pass probabilities computed for %d students", len(lr_probs))
             else:
-                logger.debug("LogReg skipped — all students in same pass/fail class")
+                logger.debug("Custom LogReg skipped — all students in same pass/fail class")
         except Exception as e:
-            logger.warning("LogisticRegression failed: %s", e)
+            logger.warning("Custom LogisticRegression failed: %s", e)
 
     # Build predictions sorted by marks desc
     sorted_marks = sorted(student_marks, key=lambda m: m["marks"], reverse=True)
@@ -199,14 +196,14 @@ def _predict_with_sklearn(
     if len(scores) >= 4:
         try:
             import numpy as np
-            from sklearn.cluster import KMeans
+            from app.ml import KMeans
             X = np.array(scores, dtype=float).reshape(-1, 1)
             n_clusters = min(4, len(scores))
-            km = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+            km = KMeans(n_clusters=n_clusters)
             km.fit(X)
             centers = [float(c[0]) for c in km.cluster_centers_]
         except Exception as e:
-            logger.warning("KMeans failed in multi-col path: %s", e)
+            logger.warning("Custom KMeans failed in multi-col path: %s", e)
 
     # Linear Regression — predict target from input feature columns
     lr_preds: dict[str, float] = {}
@@ -214,7 +211,7 @@ def _predict_with_sklearn(
     if input_cols and target_col and len(all_rows) >= 5:
         try:
             import numpy as np
-            from sklearn.linear_model import LinearRegression
+            from app.ml import LinearRegression
 
             def safe_float(v: Any) -> float:
                 try:
@@ -241,31 +238,28 @@ def _predict_with_sklearn(
 
             lr_available = True
             logger.debug(
-                "LinearRegression fitted. Features: %s → Target: %s. R² on train: %.3f",
+                "Custom LinearRegression fitted. Features: %s → Target: %s. R² on train: %.3f",
                 input_cols, target_col, reg.score(Xf, y)
             )
         except Exception as e:
-            logger.warning("LinearRegression failed: %s", e)
+            logger.warning("Custom LinearRegression failed: %s", e)
 
     # Logistic Regression for pass probability
     lr_probs: dict[str, float] = {}
     if len(scores) >= 5:
         try:
             import numpy as np
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.preprocessing import StandardScaler
+            from app.ml import LogisticRegression
             X = np.array(scores, dtype=float).reshape(-1, 1)
             y = [1 if s >= 40 else 0 for s in scores]
             if len(set(y)) > 1:
-                scaler = StandardScaler()
-                Xs = scaler.fit_transform(X)
-                clf = LogisticRegression(random_state=42, max_iter=500)
-                clf.fit(Xs, y)
-                proba = clf.predict_proba(Xs)[:, 1]
+                clf = LogisticRegression()
+                clf.fit(X, y)
+                proba = clf.predict_proba(X)
                 for i, m in enumerate(student_marks):
                     lr_probs[m["name"]] = round(float(proba[i]) * 100, 1)
         except Exception as e:
-            logger.warning("LogisticRegression failed in multi-col path: %s", e)
+            logger.warning("Custom LogisticRegression failed in multi-col path: %s", e)
 
     sorted_marks = sorted(student_marks, key=lambda m: m["marks"], reverse=True)
     predictions = []
