@@ -18,6 +18,7 @@ class StudentListFile(Base):
     section = Column(String, nullable=False, default="")
     size = Column(String, nullable=False, default="")
     file_path = Column(String, nullable=False)
+    file_data = Column(String, nullable=True)         # base64 encoded file contents
     uploaded_by_user_id = Column(
         String,
         ForeignKey("faculty_users.id", ondelete="CASCADE"),

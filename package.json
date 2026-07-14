@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "build": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build",
     "dev": "node dev.mjs",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "python backend/main.py",

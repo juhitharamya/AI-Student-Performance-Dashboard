@@ -264,11 +264,35 @@ def _student_marks_has_components(session) -> bool:
         return False
 
 def _read_file_bytes(file_path: str) -> bytes:
+    # First, try to read from disk (for local dev environments)
     try:
-        return Path(file_path).read_bytes()
+        p = Path(file_path)
+        if p.exists() and p.is_file():
+            return p.read_bytes()
     except Exception as e:
-        logger.warning("Cannot read file %s: %s", file_path, e)
-        return b""
+        logger.debug("Could not read file from disk %s: %s", file_path, e)
+
+    # Fallback to database retrieval (for Vercel serverless)
+    try:
+        import base64
+        import os
+        basename = os.path.basename(file_path)
+        file_id = basename.split("_")[0]
+        if file_id:
+            with _db.SessionLocal() as session:
+                # Check UploadedFile table
+                rec = session.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+                if rec and rec.file_data:
+                    return base64.b64decode(rec.file_data.encode("utf-8"))
+                
+                # Check StudentListFile table
+                rec_list = session.query(StudentListFile).filter(StudentListFile.id == file_id).first()
+                if rec_list and rec_list.file_data:
+                    return base64.b64decode(rec_list.file_data.encode("utf-8"))
+    except Exception as e:
+        logger.warning("Cannot read file %s from database: %s", file_path, e)
+
+    return b""
 
 
 def _parse_marks_from_path(file_path: str, filename: str) -> list[dict]:
@@ -671,8 +695,14 @@ def add_file(
     safe_name = f"{file_id}_{fname}"
     file_path = str(UPLOAD_DIR / safe_name)
 
-    # Write bytes to disk
-    Path(file_path).write_bytes(content)
+    import base64
+    file_data_b64 = base64.b64encode(content).decode("utf-8")
+
+    # Write bytes to disk (fallback if filesystem is writable)
+    try:
+        Path(file_path).write_bytes(content)
+    except Exception as e:
+        logger.debug("Local disk write skipped/failed (expected in serverless): %s", e)
 
     selected_test_type = (test_type or "Slip Test").strip()
 
@@ -691,6 +721,7 @@ def add_file(
                 section=(section or "").strip(),
                 size=size_label,
                 file_path=file_path,
+                file_data=file_data_b64,
                 uploaded_by_user_id=faculty_user_id or None,
                 created_at=now,
             )
@@ -1098,9 +1129,18 @@ def upload_student_list_file(
         file_id = str(uuid.uuid4())
         safe_name = f"{file_id}_{fname}"
         student_list_dir = UPLOAD_DIR / "student_lists"
-        student_list_dir.mkdir(parents=True, exist_ok=True)
-        file_path = str(student_list_dir / safe_name)
-        Path(file_path).write_bytes(content)
+        
+        import base64
+        file_data_b64 = base64.b64encode(content).decode("utf-8")
+
+        # Create folder and write bytes to disk (fallback if writable)
+        try:
+            student_list_dir.mkdir(parents=True, exist_ok=True)
+            file_path = str(student_list_dir / safe_name)
+            Path(file_path).write_bytes(content)
+        except Exception as e:
+            logger.debug("Local disk write skipped/failed for student list (expected in serverless): %s", e)
+            file_path = str(student_list_dir / safe_name)
 
         size_bytes = len(content)
         size_label = (
@@ -1118,6 +1158,7 @@ def upload_student_list_file(
             section=section,
             size=size_label,
             file_path=file_path,
+            file_data=file_data_b64,
             uploaded_by_user_id=faculty_user_id,
             created_at=now,
         )

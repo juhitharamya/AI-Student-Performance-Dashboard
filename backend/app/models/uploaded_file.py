@@ -19,6 +19,7 @@ class UploadedFile(Base):
     section    = Column(String, nullable=True, default="")
     size       = Column(String, nullable=True, default="")
     file_path  = Column(String, nullable=False)        # absolute path on disk
+    file_data  = Column(String, nullable=True)         # base64 encoded file contents
     uploaded_by_user_id = Column(
         String,
         ForeignKey("faculty_users.id", ondelete="SET NULL"),

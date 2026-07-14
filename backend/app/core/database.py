@@ -129,6 +129,8 @@ def _sqlite_migrate() -> None:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN uploaded_by_user_id TEXT"))
         if "test_type" not in cols:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN test_type TEXT"))
+        if "file_data" not in cols:
+            conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN file_data TEXT"))
         # Backfill for pre-existing rows so ordering works.
         conn.execute(text("UPDATE uploaded_files SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
         # Backfill legacy uploads to demo faculty if present (keeps dev UX sane).
@@ -138,6 +140,10 @@ def _sqlite_migrate() -> None:
                 "WHERE uploaded_by_user_id IS NULL"
             )
         )
+
+        cols_student_files = [r[1] for r in conn.execute(text("PRAGMA table_info(student_list_files)")).fetchall()]
+        if "file_data" not in cols_student_files:
+            conn.execute(text("ALTER TABLE student_list_files ADD COLUMN file_data TEXT"))
 
         cols_marks = [r[1] for r in conn.execute(text("PRAGMA table_info(student_marks)")).fetchall()]
         if "components_json" not in cols_marks:
