@@ -101,9 +101,8 @@ def _predict_single(student_marks: list[dict]) -> dict:
     centers: list[float] = []
     if len(scores) >= 4:
         try:
-            import numpy as np
             from app.ml import KMeans
-            X = np.array(scores, dtype=float).reshape(-1, 1)
+            X = [[float(s)] for s in scores]
             n_clusters = min(4, len(scores))
             km = KMeans(n_clusters=n_clusters)
             km.fit(X)
@@ -116,9 +115,8 @@ def _predict_single(student_marks: list[dict]) -> dict:
     lr_probs: dict[str, float] = {}
     if len(scores) >= 5:
         try:
-            import numpy as np
             from app.ml import LogisticRegression
-            X = np.array(scores, dtype=float).reshape(-1, 1)
+            X = [[float(s)] for s in scores]
             y = [1 if s >= 40 else 0 for s in scores]
             if len(set(y)) > 1:  # need both classes
                 clf = LogisticRegression()
@@ -195,9 +193,8 @@ def _predict_with_sklearn(
     centers: list[float] = []
     if len(scores) >= 4:
         try:
-            import numpy as np
             from app.ml import KMeans
-            X = np.array(scores, dtype=float).reshape(-1, 1)
+            X = [[float(s)] for s in scores]
             n_clusters = min(4, len(scores))
             km = KMeans(n_clusters=n_clusters)
             km.fit(X)
@@ -210,7 +207,6 @@ def _predict_with_sklearn(
     lr_available = False
     if input_cols and target_col and len(all_rows) >= 5:
         try:
-            import numpy as np
             from app.ml import LinearRegression
 
             def safe_float(v: Any) -> float:
@@ -219,8 +215,8 @@ def _predict_with_sklearn(
                 except (TypeError, ValueError):
                     return 0.0
 
-            Xf = np.array([[safe_float(r.get(c)) for c in input_cols] for r in all_rows])
-            y = np.array([safe_float(r.get(target_col)) for r in all_rows])
+            Xf = [[safe_float(r.get(c)) for c in input_cols] for r in all_rows]
+            y = [safe_float(r.get(target_col)) for r in all_rows]
 
             reg = LinearRegression()
             reg.fit(Xf, y)
@@ -248,9 +244,8 @@ def _predict_with_sklearn(
     lr_probs: dict[str, float] = {}
     if len(scores) >= 5:
         try:
-            import numpy as np
             from app.ml import LogisticRegression
-            X = np.array(scores, dtype=float).reshape(-1, 1)
+            X = [[float(s)] for s in scores]
             y = [1 if s >= 40 else 0 for s in scores]
             if len(set(y)) > 1:
                 clf = LogisticRegression()

@@ -1,13 +1,12 @@
-"""Validation script for custom Machine Learning algorithms."""
+"""Validation script for custom Machine Learning algorithms using pure Python structures."""
 
-import numpy as np
 from app.ml import KMeans, LinearRegression, LogisticRegression
 from app.services.ml_service import predict, predict_multi
 
 def test_kmeans():
     print("--- Testing Custom K-Means ---")
     # Synthetic marks
-    X = np.array([30, 35, 45, 80, 85, 90, 55, 60, 65]).reshape(-1, 1)
+    X = [[30], [35], [45], [80], [85], [90], [55], [60], [65]]
     km = KMeans(n_clusters=3)
     km.fit(X)
     print("Centroids computed:")
@@ -23,14 +22,14 @@ def test_linear_regression():
     print("--- Testing Custom Linear Regression ---")
     # X: [Midterm_1, Midterm_2]
     # y: Final marks (Midterm_1 * 0.4 + Midterm_2 * 0.6)
-    X = np.array([
+    X = [
         [50, 60],
         [80, 90],
         [40, 30],
         [90, 95],
         [70, 80]
-    ])
-    y = np.array([56.0, 86.0, 34.0, 93.0, 76.0])
+    ]
+    y = [56.0, 86.0, 34.0, 93.0, 76.0]
     
     lr = LinearRegression()
     lr.fit(X, y)
@@ -39,7 +38,7 @@ def test_linear_regression():
     print("R^2 score:", lr.score(X, y))
     
     # Test prediction
-    test_X = np.array([[60, 70]])
+    test_X = [[60, 70]]
     pred = lr.predict(test_X)
     print(f"Prediction for input [60, 70] (expected 66.0): {pred[0]:.2f}")
     assert abs(pred[0] - 66.0) < 0.1
@@ -49,8 +48,8 @@ def test_logistic_regression():
     print("--- Testing Custom Logistic Regression ---")
     # X: Midterm marks (0-100)
     # y: Pass/Fail (>=40 is Pass (1), else Fail (0))
-    X = np.array([20, 25, 30, 35, 50, 70, 85, 90]).reshape(-1, 1)
-    y = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    X = [[20], [25], [30], [35], [50], [70], [85], [90]]
+    y = [0, 0, 0, 0, 1, 1, 1, 1]
     
     clf = LogisticRegression(learning_rate=0.1, max_iter=2000)
     clf.fit(X, y)
@@ -60,8 +59,8 @@ def test_logistic_regression():
     # Check predictions
     probs = clf.predict_proba(X)
     print("Probabilities:")
-    for score, prob in zip(X.flatten(), probs):
-        print(f"  Score: {score} -> Pass Probability: {prob * 100:.2f}%")
+    for row, prob in zip(X, probs):
+        print(f"  Score: {row[0]} -> Pass Probability: {prob * 100:.2f}%")
     
     assert probs[0] < 0.5  # Low score should fail
     assert probs[-1] > 0.5  # High score should pass
