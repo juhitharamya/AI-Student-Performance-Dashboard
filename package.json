@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build",
+    "build": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build && node -e \"const fs=require('fs'); if(!fs.existsSync('dist')){fs.mkdirSync('dist')}; fs.cpSync('frontend/dist', 'dist', {recursive: true});\"",
     "dev": "node dev.mjs",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "python backend/main.py",
