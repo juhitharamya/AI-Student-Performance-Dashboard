@@ -59,22 +59,17 @@ def init_db() -> None:
     # Import models so Base.metadata knows about them
     from app.models import admin_user, faculty_user, student_user, uploaded_file, student_mark, student_list_file, student_list_row  # noqa: F401
 
+    Base.metadata.create_all(bind=engine)
     if engine.dialect.name == "sqlite":
-        Base.metadata.create_all(bind=engine)
         _sqlite_migrate()
         logger.info("SQLite database initialised at %s", DB_PATH)
-        _seed_demo_users()
-        return
+    else:
+        logger.info("%s database tables created/verified", engine.dialect.name)
 
-    # For non-SQLite DBs (e.g. Postgres), require Alembic migrations.
-    logger.warning(
-        "Non-SQLite database detected (%s). Run `alembic upgrade head` before starting the app.",
-        engine.dialect.name,
-    )
     try:
         _seed_demo_users()
     except Exception as e:
-        logger.warning("Skipping demo seed (DB not ready?): %s", e)
+        logger.warning("Skipping demo seed: %s", e)
 
 
 def _seed_demo_users() -> None:
