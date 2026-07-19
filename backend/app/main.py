@@ -55,18 +55,23 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+
+    # ── Health check & Root ───────────────────────────────────────────────────
+    @app.get("/", tags=["Health"], summary="API root status")
+    @app.get("/api/v1", tags=["Health"], summary="API v1 root status")
+    def root() -> dict:
+        return {"status": "ok", "message": "AI Student Performance Dashboard API", "version": settings.app_version}
+
+    @app.get("/health", tags=["Health"], summary="Server health check")
+    def health() -> dict:
+        return {"status": "ok", "version": settings.app_version}
+
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(auth.router,    prefix="/api/v1")
     app.include_router(admin.router,   prefix="/api/v1")
     app.include_router(faculty.router, prefix="/api/v1")
     app.include_router(student.router, prefix="/api/v1")
 
-    # ── Health check ──────────────────────────────────────────────────────────
-    @app.get("/health", tags=["Health"], summary="Server health check")
-    def health() -> dict:
-        return {"status": "ok", "version": settings.app_version}
-
     return app
-
 
 app = create_app()

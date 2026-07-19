@@ -4,7 +4,11 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+import os
+
 def _default_database_url() -> str:
+    if os.getenv("VERCEL"):
+        return "sqlite:////tmp/database.db"
     # backend/ directory (…/backend/app/core/config.py -> …/backend)
     repo_root = Path(__file__).resolve().parents[3]
     db_path = repo_root / "database" / "sqlite" / "database.db"

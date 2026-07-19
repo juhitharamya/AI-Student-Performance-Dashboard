@@ -22,13 +22,14 @@ logger = logging.getLogger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-BASE_DIR   = Path(__file__).resolve().parent.parent.parent   # backend/
+import os
+
+BASE_DIR   = Path("/tmp") if os.getenv("VERCEL") else Path(__file__).resolve().parent.parent.parent   # backend/
 DB_PATH    = BASE_DIR / "database.db"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 DATABASE_URL = settings.database_url or f"sqlite:///{DB_PATH}"
-
 # ── Engine & session factory ──────────────────────────────────────────────────
 
 engine, SessionLocal = create_engine_and_session(DATABASE_URL)
