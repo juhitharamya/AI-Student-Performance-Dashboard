@@ -57,7 +57,6 @@ def create_app() -> FastAPI:
 
 
     # ── Health check & Root ───────────────────────────────────────────────────
-    @app.get("/", tags=["Health"], summary="API root status")
     @app.get("/api/v1", tags=["Health"], summary="API v1 root status")
     def root() -> dict:
         return {"status": "ok", "message": "AI Student Performance Dashboard API", "version": settings.app_version}

@@ -3,27 +3,31 @@
   "rewrites": [
     {
       "source": "/api/v1/(.*)",
-      "destination": "/api/index.py"
+      "destination": "/api/server.py"
+    },
+    {
+      "source": "/api/v1",
+      "destination": "/api/server.py"
     },
     {
       "source": "/health",
-      "destination": "/api/index.py"
+      "destination": "/api/server.py"
     },
     {
       "source": "/docs",
-      "destination": "/api/index.py"
+      "destination": "/api/server.py"
     },
     {
       "source": "/openapi.json",
-      "destination": "/api/index.py"
+      "destination": "/api/server.py"
     },
     {
-      "source": "/((?!api/v1/|health|docs|openapi.json).*)",
+      "source": "/((?!api/|health|docs|openapi.json).*)",
       "destination": "/index.html"
     }
   ],
   "functions": {
-    "api/index.py": {
+    "api/server.py": {
       "excludeFiles": "frontend/**"
     }
   }
