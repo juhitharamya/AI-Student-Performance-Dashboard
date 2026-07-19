@@ -64,6 +64,7 @@ def init_db() -> None:
         _sqlite_migrate()
         logger.info("SQLite database initialised at %s", DB_PATH)
     else:
+        _postgres_migrate()
         logger.info("%s database tables created/verified", engine.dialect.name)
 
     try:
@@ -108,6 +109,17 @@ def _seed_demo_users() -> None:
         db.add_all(demo_users)
         db.commit()
         logger.info("Seeded %d demo users", len(demo_users))
+
+
+def _postgres_migrate() -> None:
+    """Ensure all required columns exist in PostgreSQL tables."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+        conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS uploaded_by_user_id TEXT"))
+        conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS test_type TEXT"))
+        conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS file_data TEXT"))
+        conn.execute(text("ALTER TABLE student_list_files ADD COLUMN IF NOT EXISTS file_data TEXT"))
+        conn.execute(text("ALTER TABLE student_marks ADD COLUMN IF NOT EXISTS components_json TEXT"))
 
 
 def _sqlite_migrate() -> None:
