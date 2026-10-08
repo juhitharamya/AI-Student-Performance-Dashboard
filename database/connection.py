@@ -49,7 +49,14 @@ def _normalize_database_url(database_url: str) -> str:
 def create_engine_and_session(database_url: str):
     database_url = _normalize_database_url(database_url)
     _ensure_sqlite_parent_dir(database_url)
-    engine = create_engine(database_url, connect_args=_connect_args(database_url), echo=False)
+    engine_kwargs = {
+        "connect_args": _connect_args(database_url),
+        "echo": False,
+    }
+    if not database_url.startswith("sqlite:///"):
+        engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["pool_recycle"] = 300
+    engine = create_engine(database_url, **engine_kwargs)
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     return engine, SessionLocal
 
