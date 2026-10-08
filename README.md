@@ -2,7 +2,11 @@
 
 An intelligent, full-stack student performance tracking and predictive analytics system designed for academic institutions. The application parses student records, generates rich visual insights, and uses machine learning (Scikit-Learn) to identify at-risk students, predict final grades, and track academic growth.
 
-![AI Student Performance Dashboard](docs/ai_student_performance_dashboard.jpg)
+![alt text](docs/login_page.png)
+![alt text](docs/faculty_analytics.png)
+![alt text](docs/faculty_dashboard.png)
+![alt text](docs/faculty_student_marks.png)
+![alt text](docs/student_dashboard.png)
 
 ---
 
